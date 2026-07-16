@@ -1,0 +1,164 @@
+#cloud-config
+# First-boot provisioning for the structural twin.
+# Terraform fills single-dollar placeholders; shell expansions are written
+# double-dollar in this source so they survive templatefile() as literals.
+# Debugging a failed boot: /var/log/twin-bootstrap.log and
+#                          /var/log/cloud-init-output.log
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - git
+  - curl
+  - jq
+  - ca-certificates
+  - gnupg
+  - apt-transport-https
+  - fail2ban
+  - unattended-upgrades
+
+# Swap headroom — the original spec flagged VM memory scaling under sustained
+# agent load. 4 GiB file-backed swap on the 64 GB OS disk.
+swap:
+  filename: /swap.img
+  size: auto
+  maxsize: 4294967296
+
+write_files:
+  # systemd socket activation overrides sshd_config entirely on modern Ubuntu.
+  # The blank ListenStream= RESETS the inherited listener before rebinding —
+  # without it this file would ADD a listener instead of replacing one.
+  - path: /etc/systemd/system/ssh.socket.d/override.conf
+    permissions: "0644"
+    content: |
+      [Socket]
+      ListenStream=
+      ListenStream=127.0.0.1:22
+
+  - path: /etc/ssh/sshd_config.d/99-twin-hardening.conf
+    permissions: "0644"
+    content: |
+      PasswordAuthentication no
+      PermitRootLogin no
+      KbdInteractiveAuthentication no
+      X11Forwarding no
+      MaxAuthTries 3
+
+  - path: /etc/apt/apt.conf.d/20auto-upgrades
+    permissions: "0644"
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+
+  - path: /etc/fail2ban/jail.local
+    permissions: "0644"
+    content: |
+      [sshd]
+      enabled = true
+      bantime = 1h
+      findtime = 10m
+      maxretry = 5
+
+  # Runtime scratch for ephemeral secret material fetched from Key Vault.
+  # /run is tmpfs: nothing here survives a reboot.
+  - path: /etc/tmpfiles.d/twin-runtime.conf
+    permissions: "0644"
+    content: |
+      d /run/${prefix} 0700 ${admin_username} ${admin_username} -
+
+  # Key Vault fetch helper — used at boot and available to runtime scripts.
+  # Retries absorb RBAC propagation lag on brand-new role assignments.
+  - path: /opt/twin-bootstrap/fetch-secret.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      # Usage: fetch-secret.sh <secret-name>   (prints value to stdout)
+      set -euo pipefail
+      SECRET_NAME="$${1:?usage: fetch-secret.sh <secret-name>}"
+      VAULT="https://${key_vault_name}.vault.azure.net"
+      IMDS="http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net&client_id=${msi_client_id}"
+      for attempt in $(seq 1 40); do
+        TOKEN=$(curl -fsS -H Metadata:true "$$IMDS" 2>/dev/null | jq -r '.access_token // empty') || TOKEN=""
+        if [ -n "$$TOKEN" ]; then
+          VALUE=$(curl -fsS -H "Authorization: Bearer $$TOKEN" "$$VAULT/secrets/$$SECRET_NAME?api-version=7.4" 2>/dev/null | jq -r '.value // empty') || VALUE=""
+          if [ -n "$$VALUE" ]; then
+            printf '%s' "$$VALUE"
+            exit 0
+          fi
+        fi
+        echo "[fetch-secret] attempt $$attempt/40 for '$$SECRET_NAME' failed; retry in 15s (RBAC propagation?)" >&2
+        sleep 15
+      done
+      echo "[fetch-secret] FAILED: '$$SECRET_NAME' after 40 attempts" >&2
+      exit 1
+
+  # Main bootstrap. Failures are loud by design — silent failures are the enemy.
+  - path: /opt/twin-bootstrap/bootstrap.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      LOG=/var/log/twin-bootstrap.log
+      exec > >(tee -a "$$LOG") 2>&1
+      trap 'echo "[bootstrap] FAILED at line $$LINENO"' ERR
+      echo "[bootstrap] start $(date -u +%FT%TZ)"
+
+      ADMIN="${admin_username}"
+      PREFIX="${prefix}"
+      HOME_DIR="/home/$$ADMIN"
+      TREE="$$HOME_DIR/$$PREFIX"
+
+      # Verify the SSH localhost binding actually took (verify, never assume).
+      ss -tlnp | grep -q "127.0.0.1:22" \
+        || echo "[bootstrap] WARN: sshd is not bound to 127.0.0.1 — check ssh.socket override"
+
+      # --- Node.js + Claude Code ------------------------------------------
+      curl -fsSL "https://deb.nodesource.com/setup_${node_major}.x" | bash -
+      apt-get install -y nodejs
+      npm install -g "@anthropic-ai/claude-code@${claude_code_version}"
+
+      # --- cloudflared ------------------------------------------------------
+      install -d -m 0755 /usr/share/keyrings
+      curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg \
+        -o /usr/share/keyrings/cloudflare-main.gpg
+      CODENAME=$(. /etc/os-release && echo "$$VERSION_CODENAME")
+      echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $$CODENAME main" \
+        > /etc/apt/sources.list.d/cloudflared.list
+      apt-get update
+      apt-get install -y cloudflared
+
+      # --- tunnel: token from Key Vault, install as a service ---------------
+      TUNNEL_TOKEN=$(/opt/twin-bootstrap/fetch-secret.sh "${kv_secret_tunnel_token}")
+      cloudflared service install "$$TUNNEL_TOKEN"
+      unset TUNNEL_TOKEN
+
+      # --- scaffold: deploy key from Key Vault, clone as the admin user -----
+      install -d -m 700 -o "$$ADMIN" -g "$$ADMIN" "$$HOME_DIR/.ssh"
+      /opt/twin-bootstrap/fetch-secret.sh "${kv_secret_deploy_key}" \
+        > "$$HOME_DIR/.ssh/scaffold_deploy_key"
+      chmod 600 "$$HOME_DIR/.ssh/scaffold_deploy_key"
+      chown "$$ADMIN:$$ADMIN" "$$HOME_DIR/.ssh/scaffold_deploy_key"
+      touch "$$HOME_DIR/.ssh/known_hosts"
+      ssh-keyscan github.com >> "$$HOME_DIR/.ssh/known_hosts" 2>/dev/null
+      chown "$$ADMIN:$$ADMIN" "$$HOME_DIR/.ssh/known_hosts"
+      sudo -u "$$ADMIN" \
+        GIT_SSH_COMMAND="ssh -i $$HOME_DIR/.ssh/scaffold_deploy_key -o IdentitiesOnly=yes" \
+        git clone "${repo_ssh_url}" "$$TREE"
+
+      # --- services ----------------------------------------------------------
+      systemctl enable --now fail2ban
+
+      cat > /etc/motd <<MOTD
+      Structural twin deployed. Scaffold: $$TREE
+      Crontab is NOT active (see crontab.template). Next steps: PLAYBOOK.md.
+      MOTD
+      echo "[bootstrap] complete $(date -u +%FT%TZ)"
+
+runcmd:
+  - [systemctl, daemon-reload]
+  - [systemctl, restart, ssh.socket]
+  - [systemd-tmpfiles, --create]
+  - [bash, /opt/twin-bootstrap/bootstrap.sh]
+
+final_message: "twin cloud-init finished after $UPTIME seconds — see /var/log/twin-bootstrap.log"

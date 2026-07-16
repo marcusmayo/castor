@@ -1,0 +1,9 @@
+# Operator profile — placeholder fields only. Populate before use.
+operator:
+  name: "[OPERATOR NAME]"
+  role: "[ROLE]"
+  timezone: "[IANA TZ]"
+preferences:
+  briefing_time: "[HH:MM]"
+  escalation_channel: "[telegram|email]"
+goals: []

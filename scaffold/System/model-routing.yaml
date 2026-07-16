@@ -1,0 +1,19 @@
+# Three-tier model routing policy — structural twin of the original
+# cost/capability tiering. Scripts read this file; never hardcode model IDs.
+# Placeholders by design: pin current model identifiers at implementation.
+
+tiers:
+  triage:
+    model: "[FAST_MODEL_ID]"
+    use_for: [inbox classification, poll triage, quick lookups]
+  routine:
+    model: "[STANDARD_MODEL_ID]"
+    use_for: [drafts, digests, skill execution, reports]
+  complex:
+    model: "[FRONTIER_MODEL_ID]"
+    use_for: [multi-step reasoning, build sessions]
+
+rules:
+  - Log model and tier on every call (scripts/audit-log.js).
+  - Escalate tiers only on defined triggers, never silently.
+  - Review blended cost monthly against tier assignments.

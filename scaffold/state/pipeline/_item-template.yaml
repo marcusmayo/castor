@@ -1,0 +1,22 @@
+# Pipeline item template — one YAML file per tracked project / use case.
+# Copy to state/pipeline/<item-id>.yaml. The /pipeline skill reads every item
+# in this directory; keep field names stable.
+#
+# Stage taxonomy is deliberately a placeholder: define your own governance
+# stages here rather than importing any organization's proprietary gate names.
+
+id: "[ITEM-001]"
+name: "[Use case / project name]"
+stage: "[STAGE]"           # your governance stage taxonomy
+owner: "[Accountable owner]"
+status: active             # active | blocked | on-hold | done
+opened: "[YYYY-MM-DD]"
+updated: "[YYYY-MM-DD]"
+next_action:
+  what: "[Single next step]"
+  who: "[Name]"
+  due: "[YYYY-MM-DD]"
+stakeholders: []           # names only — never contact details (CLAUDE.md rule)
+links: []                  # knowledge/ pages, external references
+notes: |
+  [Free-form context. The redaction gate applies to anything ingested here.]

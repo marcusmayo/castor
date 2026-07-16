@@ -1,0 +1,23 @@
+# Voice profile — structural template. Build the real one from a corpus of
+# genuinely approved drafts, not from generic descriptors.
+greeting:
+  default: "[GREETING PATTERN]"
+  never_use: []
+sign_off:
+  default: "[SIGN-OFF PATTERN]"
+  never_use: []
+structure:
+  pattern: "[e.g. Context -> Specifics -> Ask]"
+  paragraphs: "[length rule]"
+tone:
+  primary: "[register]"
+governance_tiers:
+  # Draft style varies by audience tier — define per-tier adjustments.
+  "[TIER-A]":
+    register: "[adjustment]"
+  "[TIER-B]":
+    register: "[adjustment]"
+formatting_rules: []
+vocabulary:
+  prefer: []
+  avoid: []

@@ -1,0 +1,15 @@
+# Cron schedule — structural twin of the original 10-entry schedule.
+# NOT installed by cloud-init. Activate only after the referenced scripts are
+# implemented:  crontab ~/[PREFIX]/crontab.template   (after editing paths)
+# All paths assume the scaffold is cloned to $HOME/[PREFIX].
+
+*/5 * * * *   bash -lc 'node $HOME/[PREFIX]/scripts/email-poller.js'   # poll review mailbox
+0 17 * * 1-5  bash -lc 'node $HOME/[PREFIX]/scripts/digest.js'         # daily digest
+0 17 * * 5    bash -lc 'node $HOME/[PREFIX]/scripts/digest.js --weekly' # weekly summary
+0 * * * *     bash -lc 'node $HOME/[PREFIX]/scripts/health-check.js'   # hourly health
+0 6 * * *     bash -lc 'cd $HOME/[PREFIX] && git add -u && git commit -m "auto: daily" || true'
+*/30 * * * *  bash -lc 'cd $HOME/[PREFIX] && git add -u && git commit -m "auto: periodic" || true'
+0 3 * * 0     bash -lc 'python3 $HOME/[PREFIX]/scripts/sunday-maintenance.py'
+15 3 * * 1    bash -lc 'bash $HOME/[PREFIX]/scripts/pii-weekly-scan.sh'
+0 6 * * 0     bash -lc 'bash $HOME/[PREFIX]/scripts/log-rotate.sh'
+0 2 * * *     bash -lc 'bash $HOME/[PREFIX]/scripts/azure-backup.sh'   # daily backup

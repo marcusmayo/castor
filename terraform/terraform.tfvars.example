@@ -1,0 +1,20 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+# Provider credentials do NOT go here — they are environment variables
+# (CLOUDFLARE_API_TOKEN, GITHUB_TOKEN, az login). See PLAYBOOK.md §1.
+
+subscription_id      = "00000000-0000-0000-0000-000000000000"
+prefix               = "twin"
+location             = "eastus"
+admin_ssh_public_key = "ssh-ed25519 AAAA... you@machine"
+
+# vm_size            = "Standard_B2ms"   # default; swap if region lacks stock
+# claude_code_version = "latest"         # pin an exact version for prod posture
+
+cloudflare_account_id = "your-cloudflare-account-id"
+cloudflare_zone_id    = "your-zone-id"
+cloudflare_zone_name  = "example.com"
+# app_subdomain       = "twin"           # -> twin.example.com
+# ssh_subdomain       = "ssh-twin"       # -> ssh-twin.example.com
+
+github_owner = "your-github-user-or-org"
+# scaffold_repo_name = "twin-scaffold"
