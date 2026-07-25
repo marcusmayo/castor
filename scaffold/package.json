@@ -2,8 +2,12 @@
   "name": "castor-scaffold",
   "version": "1.0.0",
   "private": true,
-  "description": "Castor deployed filesystem scaffold — agent scripts and capability registry.",
+  "description": "Castor deployed filesystem scaffold — agent scripts, capability registry, intake lane.",
   "dependencies": {
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "xlsx": "^0.18.5",
+    "mammoth": "^1.6.0",
+    "mailparser": "^3.6.0",
+    "@kenjiuno/msgreader": "^1.22.0"
   }
 }
