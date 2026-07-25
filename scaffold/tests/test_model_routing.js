@@ -60,10 +60,21 @@ t('set on unknown tier errors', () => {
   const mr2 = require(path.join(__dirname,'..','scripts','model-routing.js'));
   assert.throws(() => mr2.set('nope', { slug: 'x' }), /unknown tier/);
 });
-t('file still parses and keeps comments header after set', () => {
-  const raw = fs.readFileSync(path.join(tmp,'System','model-routing.yaml'), 'utf8');
-  assert.ok(raw.startsWith('# Model routing'), 'header comment lost');
-  assert.ok(yaml.load(raw).tiers, 'file no longer valid yaml');
+t('set writes the persistent state copy, not the image default', () => {
+  // after the sets above, the state copy exists and the image default is untouched
+  assert.ok(fs.existsSync(path.join(tmp,'state','model-routing.yaml')), 'state copy not written');
+  const stateRaw = fs.readFileSync(path.join(tmp,'state','model-routing.yaml'), 'utf8');
+  assert.ok(stateRaw.startsWith('# Model routing'), 'header comment lost in state copy');
+  assert.ok(yaml.load(stateRaw).tiers, 'state copy no longer valid yaml');
+  const defaultRaw = fs.readFileSync(path.join(tmp,'System','model-routing.yaml'), 'utf8');
+  assert.strictEqual(yaml.load(defaultRaw).tiers.complex.openrouter_slug, 'openrouter/deepseek/deepseek-v4-pro',
+    'image default must be untouched by set');
+});
+t('reads prefer the state copy once it exists', () => {
+  delete require.cache[require.resolve(path.join(__dirname,'..','scripts','model-routing.js'))];
+  const mr2 = require(path.join(__dirname,'..','scripts','model-routing.js'));
+  // complex was set to the 3.7 slug earlier; the state copy carries it
+  assert.strictEqual(mr2.list().find(r=>r.tier==='complex').slug, 'openrouter/anthropic/claude-3.7-sonnet');
 });
 
 console.log('\n--- vision model (changeable like text tiers) ---');

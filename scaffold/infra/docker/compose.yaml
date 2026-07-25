@@ -1,0 +1,48 @@
+# Castor self-contained deployment. Requires castor.env alongside (gitignored),
+# created by infra/scripts/bootstrap.sh:
+#   TOTP_SECRET=...            # generated + enrolled by bootstrap
+#   OPENROUTER_API_KEY=...     # text skills via the LiteLLM gateway
+#   VISION_API_KEY=...         # direct Anthropic key for the interpret path
+#   ANTHROPIC_BASE_URL=http://gateway:4000   # claude -p -> gateway (OpenRouter)
+name: castor
+services:
+  webchat:
+    image: castor:latest
+    container_name: castor-webchat
+    env_file: [castor.env]
+    environment:
+      CASTOR_BIND: 0.0.0.0       # container netns; host exposure is the ports: line
+      AGENT_ROOT: /app
+      HOME: /home/castor         # claude CLI config dir
+      GATEWAY_CONFIG_PATH: /app/infra/docker/litellm/openrouter.yaml
+    ports:
+      - "${CASTOR_PUBLISH_ADDR:-127.0.0.1}:${CASTOR_PUBLISH_PORT:-8443}:8443"
+    volumes:                     # image = code; state = volumes (literal split)
+      - castor-state:/app/state
+      - castor-knowledge:/app/knowledge
+      - castor-logs:/app/logs
+      - castor-inbox:/app/inbox
+      # LiteLLM config bind-mounted read-write so `model-routing.js set`
+      # regenerates it in place (persists on the host; gateway reads it).
+      - ./litellm:/app/infra/docker/litellm
+    restart: unless-stopped
+  gateway:
+    # OPTIONAL: `docker compose --profile gateway up -d`
+    # Official image, digest-pinned (see infra/versions.lock). Never pip-installed.
+    profiles: ["gateway"]
+    image: ghcr.io/berriai/litellm@sha256:9ef6f45bc0104940571765e610c52a1d761b5ec85efcd193795281086ee61277
+    container_name: castor-gateway
+    env_file: [castor.env]
+    command: ["--config", "/cfg/openrouter.yaml", "--port", "4000"]
+    volumes:
+      - ./litellm:/cfg:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # no host port: reachable only from the compose network (webchat -> gateway)
+    restart: unless-stopped
+
+volumes:
+  castor-state:
+  castor-knowledge:
+  castor-logs:
+  castor-inbox:

@@ -22,7 +22,16 @@ const path = require('path');
 const yaml = require('js-yaml');
 
 const AGENT_ROOT = process.env.AGENT_ROOT || path.join(process.env.HOME, 'castor');
-const ROUTING = process.env.MODEL_ROUTING || path.join(AGENT_ROOT, 'System', 'model-routing.yaml');
+// Image default (baked, read-only) vs writable state copy (a volume, persists
+// across restarts). A `set` writes the state copy; reads prefer it so an
+// operator's model change survives a container restart. On a fresh deploy the
+// state copy does not exist yet, so reads fall back to the image default.
+const ROUTING_DEFAULT = process.env.MODEL_ROUTING || path.join(AGENT_ROOT, 'System', 'model-routing.yaml');
+const ROUTING_STATE = process.env.MODEL_ROUTING_STATE || path.join(AGENT_ROOT, 'state', 'model-routing.yaml');
+// The LiteLLM gateway config regenerated after a change (mounted, read-write).
+const GATEWAY_CONFIG = process.env.GATEWAY_CONFIG_PATH || path.join(AGENT_ROOT, 'infra', 'docker', 'litellm', 'openrouter.yaml');
+function readPath() { return fs.existsSync(ROUTING_STATE) ? ROUTING_STATE : ROUTING_DEFAULT; }
+const ROUTING = ROUTING_STATE; // back-compat export
 
 const HEADER = `# Model routing — tier -> model policy, and the single source of truth for both
 # the model \`claude -p\` requests (model_name) and the OpenRouter model it maps
@@ -38,8 +47,9 @@ const HEADER = `# Model routing — tier -> model policy, and the single source 
 
 function load() {
   let raw;
-  try { raw = fs.readFileSync(ROUTING, 'utf8'); }
-  catch (e) { throw new Error(`model-routing.yaml unreadable at ${ROUTING}: ${e.message}`); }
+  const src = readPath();
+  try { raw = fs.readFileSync(src, 'utf8'); }
+  catch (e) { throw new Error(`model-routing.yaml unreadable at ${src}: ${e.message}`); }
   const doc = yaml.load(raw);
   if (!doc || !doc.tiers || typeof doc.tiers !== 'object') {
     throw new Error('model-routing.yaml has no tiers');
@@ -49,7 +59,19 @@ function load() {
 
 function save(doc) {
   const body = yaml.dump(doc, { lineWidth: 100, noRefs: true });
-  fs.writeFileSync(ROUTING, HEADER + '\n' + body, { mode: 0o644 });
+  fs.mkdirSync(path.dirname(ROUTING_STATE), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(ROUTING_STATE, HEADER + '\n' + body, { mode: 0o644 });
+}
+
+// Regenerate the gateway config from the current routing, into the mounted
+// LiteLLM config path if that directory exists. Called after a model change so
+// the gateway never drifts. Returns true if written.
+function regenerateGateway() {
+  try {
+    if (!fs.existsSync(path.dirname(GATEWAY_CONFIG))) return false;
+    fs.writeFileSync(GATEWAY_CONFIG, gatewayConfig(), { mode: 0o644 });
+    return true;
+  } catch { return false; }
 }
 
 // Resolve a tier (or the default) to the model_name claude -p should request.
@@ -159,6 +181,7 @@ if (require.main === module) {
       if (!tier) { console.error('usage: set <tier> --slug openrouter/<v>/<m> [--name <model_name>]'); process.exit(1); }
       const updated = set(tier, { slug: flags.slug, name: flags.name });
       console.log(`set ${tier}: ${updated.model_name} -> ${updated.openrouter_slug}`);
+      if (regenerateGateway()) console.log('gateway config regenerated — restart the gateway container for it to take effect');
     } else {
       console.error('commands: resolve <tier> | list | gateway-config | vision | set-vision --model ... [--url ...] | set <tier> --slug ... [--name ...]');
       process.exit(1);
@@ -166,4 +189,4 @@ if (require.main === module) {
   } catch (e) { console.error('model-routing: ' + e.message); process.exit(1); }
 }
 
-module.exports = { load, resolve, resolveVision, setVision, gatewayConfig, set, list, ROUTING };
+module.exports = { load, resolve, resolveVision, setVision, gatewayConfig, regenerateGateway, set, list, ROUTING, ROUTING_STATE, ROUTING_DEFAULT };
