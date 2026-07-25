@@ -77,6 +77,30 @@ app.get('/model', requireAuth, (req, res) => {
   catch (e) { res.json({ ok: false, error: e.message }); }
 });
 
+const pending = require('./pending');
+
+// Pending panel: intake items grouped by state.
+app.get('/pending', requireAuth, (req, res) => {
+  try { res.json({ ok: true, groups: pending.listPending(AGENT_ROOT) }); }
+  catch (e) { res.json({ ok: false, error: e.message }); }
+});
+// Serve a vision-pending image for the attestation thumbnail (authed only).
+app.get('/pending/image/:name', requireAuth, (req, res) => {
+  const file = pending.imagePath(AGENT_ROOT, req.params.name);
+  if (!file) return res.status(400).send('bad image');
+  res.sendFile(file);
+});
+// Attested vision: the operator confirms the exact image (by hash) before its
+// raw bytes leave the VM. pending.interpret audits the egress and verifies the
+// hash before sending.
+app.post('/pending/interpret', requireAuth, async (req, res) => {
+  const { name, sha256 } = req.body || {};
+  try {
+    const r = await pending.interpret(AGENT_ROOT, name, sha256, { fetch: globalThis.fetch, audit: auditRecord });
+    res.json(r);
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 app.get('/', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'chat.html')));
 
 const server = http.createServer(app);
