@@ -1,0 +1,20 @@
+# Castor pinned versions & hashes — single source for every install path.
+# Reuses the pins proven on Keel (same base, Node, Claude Code, LiteLLM).
+# Regenerate Node/Claude hashes: python3 infra/scripts/gen-versions-lock.py
+NODE_VERSION=20.20.2
+NODE_SHA256_LINUX_X64=df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d
+NODE_SHA256_LINUX_ARM64=73093db209e4e9e09dd7d15a47aeaab1b74833830df03efa5f942a1122c5fa71
+CLAUDE_CODE_VERSION=2.1.183
+CLAUDE_CODE_NPM_INTEGRITY=sha512-c+Q9UHie0gaRaioHtEiYTVT2rt/C2ZsxkpMxKAaVFa+x3Fw+XHlv1uKKsqHuuBzEmwRMmelVs+1E3VyQFGv+vw==
+UBUNTU_BASE_IMAGE=ubuntu:24.04
+UBUNTU_BASE_DIGEST=sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
+# Castor runtime adds poppler-utils (pdftotext), tesseract-ocr (OCR), gzip
+# (log-rotate) from the Ubuntu repo — versioned by the pinned base image digest.
+# Node deps pinned by package-lock.json in scaffold root, gate/, and webchat/
+# (integrity enforced by npm ci). No Python pip deps: the only Python script
+# (sunday-maintenance.py) is stdlib-only.
+# LiteLLM gateway (OPTIONAL, --profile gateway). Official proxy image ONLY --
+# never `pip install litellm`. Same pin as Keel, verified 2026-07-14.
+LITELLM_IMAGE=ghcr.io/berriai/litellm
+LITELLM_DIGEST=sha256:9ef6f45bc0104940571765e610c52a1d761b5ec85efcd193795281086ee61277
+LITELLM_VERSION=1.92.0
