@@ -1,0 +1,77 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Castor</title><style>
+body{background:#0d0d0d;color:#ddd;font-family:system-ui,sans-serif;margin:0;display:flex;flex-direction:column;height:100vh}
+header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid #222}
+.brand{color:#7aa6d6;font-weight:800;font-size:18px}
+.modelbar{font-size:12px;color:#888;font-family:monospace}
+.modelbar b{color:#9ecb9e}.modelbar code{color:#7aa6d6}
+button.logout{background:#1e1e1e;border:1px solid #2e2e2e;border-radius:6px;color:#aaa;padding:6px 12px;cursor:pointer}
+.cheattoggle{padding:8px 16px;color:#7aa6d6;cursor:pointer;font-size:14px;border-bottom:1px solid #1a1a1a}
+#cheat{padding:8px 16px;border-bottom:1px solid #1a1a1a;display:none}
+.cheatgroup{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;margin:4px 0}
+.glabel{color:#666;font-size:11px;text-transform:uppercase;letter-spacing:.5px;width:120px;flex-shrink:0;text-align:right;padding-right:6px}
+.cheatchip{background:#1e1e1e;border:1px solid #2e2e2e;border-radius:4px;padding:2px 8px;font-family:monospace;font-size:12px;color:#7aa6d6;cursor:pointer}
+.cheatchip:hover{background:#252525}
+#log{flex:1;overflow-y:auto;padding:16px;white-space:pre-wrap;font-size:14px;line-height:1.5}
+.msg{margin-bottom:14px}.me{color:#9ecb9e}.sys{color:#ccc}.err{color:#e06c6c}.step{color:#777;font-style:italic;font-size:13px}
+footer{display:flex;gap:8px;padding:12px 16px;border-top:1px solid #222}
+textarea{flex:1;background:#0a0a0a;border:1px solid #2e2e2e;border-radius:8px;color:#ddd;padding:12px;font-size:14px;resize:none;font-family:inherit}
+button.send{background:#2563eb;border:0;border-radius:8px;color:#fff;padding:0 22px;cursor:pointer}
+</style></head><body>
+<header>
+  <span class="brand">Castor</span>
+  <span class="modelbar" id="modelbar">model: …</span>
+  <button class="logout" onclick="fetch('/logout',{method:'POST'}).then(()=>location.href='/login')">Log out</button>
+</header>
+<div class="cheattoggle" onclick="toggleCheat()"><span id="caret">▸</span> Skills</div>
+<div id="cheat">
+  <div class="cheatgroup"><span class="glabel">Briefing</span>
+    <code class="cheatchip" onclick="ins('/morning')" title="daily briefing: deadlines, pipeline, overnight intake">/morning</code>
+    <code class="cheatchip" onclick="ins('/pipeline')" title="portfolio status by stage (read-only)">/pipeline</code>
+    <code class="cheatchip" onclick="ins('/compliance-report')" title="nine-point posture report">/compliance-report</code></div>
+  <div class="cheatgroup"><span class="glabel">Capture</span>
+    <code class="cheatchip" onclick="ins('/triage')" title="process inbox: classify, propose actions (confirm to apply)">/triage</code></div>
+  <div class="cheatgroup"><span class="glabel">People</span>
+    <code class="cheatchip" onclick="ins('/people ')" title="stakeholder lookup (read-only)">/people</code>
+    <code class="cheatchip" onclick="ins('/draft ')" title="draft a message in your voice (never sends)">/draft</code></div>
+</div>
+<div id="log"></div>
+<footer>
+  <textarea id="input" rows="1" placeholder="Ask Castor… (e.g. /morning, or paste a note for /triage)"></textarea>
+  <button class="send" onclick="send()">Send</button>
+</footer>
+<script>
+const log=document.getElementById('log');
+function add(text,cls){const d=document.createElement('div');d.className='msg '+(cls||'sys');d.textContent=text;log.appendChild(d);log.scrollTop=log.scrollHeight;return d;}
+function ins(cmd){const i=document.getElementById('input');i.value=cmd;i.focus();}
+function toggleCheat(){const c=document.getElementById('cheat');const open=c.style.display==='block';c.style.display=open?'none':'block';document.getElementById('caret').textContent=open?'▸':'▾';}
+
+// Model discoverability: show the active model and how to change it.
+fetch('/model').then(r=>r.json()).then(d=>{
+  const bar=document.getElementById('modelbar');
+  if(!d.ok){bar.textContent='model: (unavailable)';return;}
+  const def=d.tiers.find(t=>t.default)||d.tiers[0];
+  bar.innerHTML='model: <b>'+def.model_name+'</b> ('+def.tier+') · change: <code>node scripts/model-routing.js set &lt;tier&gt; --slug openrouter/&lt;v&gt;/&lt;m&gt;</code>';
+}).catch(()=>{document.getElementById('modelbar').textContent='model: (unavailable)';});
+
+let ws, streaming=false, current=null;
+function connect(){
+  ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
+  ws.onmessage=(e)=>{const ev=JSON.parse(e.data);
+    if(ev.type==='start'){current=add('','sys');streaming=true;}
+    else if(ev.type==='token'){current.textContent+=ev.text;log.scrollTop=log.scrollHeight;}
+    else if(ev.type==='step'){add(ev.text,'step');}
+    else if(ev.type==='error'){add(ev.text,'err');}
+    else if(ev.type==='done'){streaming=false;}
+  };
+  ws.onclose=()=>{setTimeout(connect,1500);};
+}
+connect();
+function send(){
+  const i=document.getElementById('input');const prompt=i.value.trim();
+  if(!prompt||streaming||ws.readyState!==1)return;
+  add(prompt,'me');i.value='';
+  ws.send(JSON.stringify({prompt}));
+}
+document.getElementById('input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
+</script></body></html>
