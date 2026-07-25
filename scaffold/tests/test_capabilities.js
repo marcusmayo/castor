@@ -14,10 +14,15 @@ function t(n, fn) { try { fn(); pass++; console.log('  PASS  ' + n); } catch (e)
 const cap = require(path.join(ROOT, 'scripts', 'capability.js'));
 
 console.log('\n--- registry ---');
-t('loads six capabilities', () => assert.strictEqual(cap.loadRegistry().length, 6));
+t('loads seven capabilities', () => assert.strictEqual(cap.loadRegistry().length, 7));
 t('ids are unique', () => {
   const ids = cap.loadRegistry().map(c => c.id);
   assert.strictEqual(new Set(ids).size, ids.length);
+});
+t('vision is optional with a vision-api-key secret', () => {
+  const v = cap.loadRegistry().find(c => c.id === 'vision');
+  assert.ok(v); assert.strictEqual(v.required, false);
+  assert.strictEqual(v.secrets[0].name, 'vision-api-key');
 });
 t('calendar is optional with an ics-url secret', () => {
   const cal = cap.loadRegistry().find(c => c.id === 'calendar');
@@ -103,7 +108,7 @@ function wiz(args) {
 t('--status lists all and flags missing required', () => {
   const r = wiz(['--status']);
   assert.strictEqual(r.code, 0);
-  for (const id of ['model', 'telegram', 'resend', 'azure_backup', 'cloudflare_tunnel', 'calendar']) assert.ok(r.out.includes(id), 'missing ' + id);
+  for (const id of ['model', 'telegram', 'resend', 'azure_backup', 'cloudflare_tunnel', 'calendar', 'vision']) assert.ok(r.out.includes(id), 'missing ' + id);
   assert.ok(r.out.includes('agent will not function'), 'required warning absent');
 });
 t('--disable states losses and re-enable path', () => {

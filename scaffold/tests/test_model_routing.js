@@ -66,12 +66,36 @@ t('file still parses and keeps comments header after set', () => {
   assert.ok(yaml.load(raw).tiers, 'file no longer valid yaml');
 });
 
+console.log('\n--- vision model (changeable like text tiers) ---');
+t('vision resolves to the default direct-Anthropic model', () => {
+  const v = mr.resolveVision();
+  assert.strictEqual(v.model, 'claude-sonnet-4-6');
+  assert.ok(v.api_url.includes('api.anthropic.com'));
+});
+t('set-vision changes the model and persists', () => {
+  mr.setVision({ model: 'claude-opus-4-8' });
+  delete require.cache[require.resolve(path.join(__dirname,'..','scripts','model-routing.js'))];
+  const mr2 = require(path.join(__dirname,'..','scripts','model-routing.js'));
+  assert.strictEqual(mr2.resolveVision().model, 'claude-opus-4-8');
+});
+t('set-vision can change the endpoint too', () => {
+  const mr2 = require(path.join(__dirname,'..','scripts','model-routing.js'));
+  mr2.setVision({ url: 'https://api.anthropic.com/v1/messages?beta=1' });
+  assert.ok(mr2.resolveVision().api_url.includes('beta=1'));
+});
+t('vision change does not disturb the text tiers', () => {
+  const mr2 = require(path.join(__dirname,'..','scripts','model-routing.js'));
+  assert.strictEqual(mr2.resolve('routine'), 'claude-sonnet-4-5');
+});
+
 console.log('\n--- CLI surface ---');
 const { execFileSync } = require('child_process');
 function cli(args){ try { return { code:0, out: execFileSync('node',[path.join(__dirname,'..','scripts','model-routing.js'),...args],{encoding:'utf8',env:{...process.env,AGENT_ROOT:tmp}}) }; } catch(e){ return { code:e.status, out:(e.stdout||'')+(e.stderr||'') }; } }
 t('resolve CLI prints a bare model name', () => { const r=cli(['resolve','routine']); assert.strictEqual(r.code,0); assert.strictEqual(r.out.trim(),'claude-sonnet-4-5'); });
 t('list CLI marks the default tier', () => { const r=cli(['list']); assert.ok(/routine\*/.test(r.out)); });
 t('gateway-config CLI emits valid yaml', () => { const r=cli(['gateway-config']); assert.ok(yaml.load(r.out).model_list.length===3); });
+t('vision CLI prints the current vision model', () => { const r=cli(['vision']); assert.ok(/vision model:/.test(r.out)); });
+t('set-vision CLI persists', () => { const r=cli(['set-vision','--model','claude-3-5-haiku-20241022']); assert.strictEqual(r.code,0); assert.ok(cli(['vision']).out.includes('claude-3-5-haiku-20241022')); });
 t('unknown command exits non-zero', () => { assert.notStrictEqual(cli(['bogus']).code,0); });
 
 console.log(`\nMODEL ROUTING: ${pass} passed, ${fail.length} failed`);

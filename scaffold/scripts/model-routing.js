@@ -95,6 +95,27 @@ function set(tier, fields) {
   return doc.tiers[tier];
 }
 
+// Vision model for the attested-image interpret path. Direct to Anthropic,
+// separate from the OpenRouter text tiers. Returns { model, api_url }.
+function resolveVision() {
+  const doc = load();
+  const v = doc.vision || {};
+  return {
+    model: v.model || 'claude-sonnet-4-6',
+    api_url: v.api_url || 'https://api.anthropic.com/v1/messages',
+  };
+}
+
+function setVision(fields) {
+  const doc = load();
+  if (!fields.model && !fields.url) throw new Error('nothing to set: pass --model and/or --url');
+  doc.vision = doc.vision || {};
+  if (fields.model) doc.vision.model = fields.model;
+  if (fields.url) doc.vision.api_url = fields.url;
+  save(doc);
+  return doc.vision;
+}
+
 function list() {
   const doc = load();
   const rows = [];
@@ -120,6 +141,16 @@ if (require.main === module) {
       console.log(resolve(args[0]));
     } else if (cmd === 'list') {
       for (const r of list()) console.log(`${(r.tier + (r.default ? '*' : '')).padEnd(10)} ${(r.model_name || '?').padEnd(28)} -> ${r.slug || '?'}`);
+      const v = resolveVision();
+      console.log(`${'vision'.padEnd(10)} ${v.model.padEnd(28)} -> ${v.api_url} (direct Anthropic)`);
+    } else if (cmd === 'vision') {
+      const v = resolveVision();
+      console.log(`vision model: ${v.model}`);
+      console.log(`vision api:   ${v.api_url}`);
+    } else if (cmd === 'set-vision') {
+      const { flags } = parseFlags(args);
+      const v = setVision({ model: flags.model, url: flags.url });
+      console.log(`set vision: ${v.model} -> ${v.api_url}`);
     } else if (cmd === 'gateway-config') {
       process.stdout.write(gatewayConfig());
     } else if (cmd === 'set') {
@@ -129,10 +160,10 @@ if (require.main === module) {
       const updated = set(tier, { slug: flags.slug, name: flags.name });
       console.log(`set ${tier}: ${updated.model_name} -> ${updated.openrouter_slug}`);
     } else {
-      console.error('commands: resolve <tier> | list | gateway-config | set <tier> --slug ... [--name ...]');
+      console.error('commands: resolve <tier> | list | gateway-config | vision | set-vision --model ... [--url ...] | set <tier> --slug ... [--name ...]');
       process.exit(1);
     }
   } catch (e) { console.error('model-routing: ' + e.message); process.exit(1); }
 }
 
-module.exports = { load, resolve, gatewayConfig, set, list, ROUTING };
+module.exports = { load, resolve, resolveVision, setVision, gatewayConfig, set, list, ROUTING };

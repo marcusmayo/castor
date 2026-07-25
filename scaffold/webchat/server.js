@@ -96,7 +96,10 @@ app.get('/pending/image/:name', requireAuth, (req, res) => {
 app.post('/pending/interpret', requireAuth, async (req, res) => {
   const { name, sha256 } = req.body || {};
   try {
-    const r = await pending.interpret(AGENT_ROOT, name, sha256, { fetch: globalThis.fetch, audit: auditRecord });
+    // Resolve the vision model/endpoint from model-routing (changeable via CLI,
+    // same as the text tiers). Direct to Anthropic by default.
+    const v = modelRouting.resolveVision();
+    const r = await pending.interpret(AGENT_ROOT, name, sha256, { fetch: globalThis.fetch, audit: auditRecord, model: v.model, url: v.api_url });
     res.json(r);
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });

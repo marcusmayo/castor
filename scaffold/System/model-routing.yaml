@@ -31,6 +31,14 @@ tiers:
 
 default_tier: routine
 
+# Vision model for the attested-image interpret path (pending panel). This is
+# DIRECT to Anthropic, not through the OpenRouter gateway — the interpret call
+# uses Anthropic's native image message format. Changed the same way as the
+# text tiers:  node scripts/model-routing.js set-vision --model claude-sonnet-4-6
+vision:
+  model: claude-sonnet-4-6
+  api_url: https://api.anthropic.com/v1/messages
+
 rules:
   - Log model and tier on every call (scripts/audit-log.js).
   - Escalate tiers only on defined triggers, never silently.
