@@ -10,11 +10,13 @@ crash.*.log
 terraform.tfvars
 *.auto.tfvars
 backend.hcl
-
 # Keys and secret material — should never exist here, but belt and suspenders
 *.pem
 *_key
 *_key.pub
-
 # Editor/OS noise
 .DS_Store
+scaffold/gate/never-egress.json
+scaffold/gate/node_modules/
+scaffold/node_modules/
+scaffold/state/capabilities.json

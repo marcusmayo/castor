@@ -1,10 +1,25 @@
+#!/usr/bin/env node
 /**
- * audit-log.js — STUB (structural twin)
- * Intended function: Append-only JSONL audit trail for every model API call.
- * Original pattern:  timestamp, model, routing tier, token counts, redaction status per entry; written to logs/audit.jsonl.
- * Secrets:           fetched at runtime from Key Vault via managed identity
- *                    (see /opt/twin-bootstrap/fetch-secret.sh) — never from disk.
- * Status:            NOT IMPLEMENTED. Logs invocation and exits.
+ * audit-log.js — append-only, hash-chained JSONL audit trail.
+ *
+ * Delegates to gate/audit.js (ported from Keel). Content is never written —
+ * only metadata, entity counts, and the hash chain.
+ *
+ * CLI:
+ *   node scripts/audit-log.js verify   # validate the chain, exit 1 if broken
+ *   node scripts/audit-log.js path     # print the resolved log path
  */
-console.error('[stub] audit-log.js invoked — not implemented');
-process.exit(0);
+const { record, verify, LOG } = require('../gate/audit');
+
+module.exports = { record, verify, LOG };
+
+if (require.main === module) {
+  const cmd = process.argv[2] || 'verify';
+  if (cmd === 'path') { console.log(LOG); process.exit(0); }
+  if (cmd === 'verify') {
+    const r = verify();
+    if (r.ok) { console.log(`AUDIT CHAIN: OK (${r.length} entries) ${LOG}`); process.exit(0); }
+    console.error(`AUDIT CHAIN: BROKEN at entry ${r.brokenAt} of ${r.length}`); process.exit(1);
+  }
+  console.error('Usage: audit-log.js [verify|path]'); process.exit(1);
+}

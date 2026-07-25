@@ -1,0 +1,32 @@
+{
+  "_comment": [
+    "Tripwire config for the egress gate. Copy to never-egress.json and edit.",
+    "tripwire.js FAILS CLOSED: if never-egress.json is missing or unparseable,",
+    "every model call is blocked with CONFIG_ERROR. That is intentional.",
+    "",
+    "block_terms are matched case-insensitively as substrings.",
+    "block_patterns are JavaScript regex sources, applied with flags 'gi'.",
+    "",
+    "This template is deliberately employer-agnostic. Add the specific",
+    "codenames, client names, and internal identifiers for the current",
+    "engagement; remove them when the engagement ends. Nothing here is",
+    "hardcoded in the gate, so re-targeting is a config change only."
+  ],
+
+  "block_terms": [
+    "REPLACE_WITH_EMPLOYER_NAME",
+    "REPLACE_WITH_INTERNAL_PROJECT_CODENAME",
+    "REPLACE_WITH_CLIENT_NAME"
+  ],
+
+  "block_patterns": [
+    "-----BEGIN [A-Z ]*PRIVATE KEY-----",
+    "\\bAKIA[0-9A-Z]{16}\\b",
+    "\\bsk-[A-Za-z0-9]{20,}\\b",
+    "\\bghp_[A-Za-z0-9]{36}\\b",
+    "\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b",
+    "\\bBearer\\s+[A-Za-z0-9._~+/-]{20,}={0,2}\\b",
+    "\\b[A-Z]{2,5}-\\d{4,}\\b",
+    "\\b\\d{3}-\\d{2}-\\d{4}\\b"
+  ]
+}
