@@ -1,0 +1,23 @@
+# Pipeline stage vocabulary — the ordered set of stages an item moves through.
+# Generic and operator-editable: replace or extend for the current engagement.
+# The pipeline and triage skills group items by these stages, in this order.
+# An item whose `stage` is not in this list is reported as off-vocabulary
+# rather than silently bucketed.
+stages:
+  - intake
+  - triage
+  - in-progress
+  - blocked
+  - review
+  - done
+
+# Stages considered terminal (an item here needs no further action).
+terminal:
+  - done
+
+# Action-item lifecycle statuses (separate from pipeline stage).
+action_statuses:
+  - open
+  - in-progress
+  - blocked
+  - done

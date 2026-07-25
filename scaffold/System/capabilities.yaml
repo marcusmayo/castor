@@ -155,3 +155,34 @@ capabilities:
       - Add a public hostname routing to http://localhost:8443 for the webchat.
       - This is normally provisioned by the infrastructure layer at first boot.
     verify: fetch-secret tunnel-token
+
+  - id: calendar
+    name: Calendar feed
+    required: false
+    summary: >
+      Optional read-only external calendar (an ICS/webcal subscription URL). The
+      morning briefing factors real calendar events in alongside the due dates
+      and estimates tracked internally on action items. Internal due-date
+      tracking always works; this capability adds awareness of a calendar the
+      operator keeps elsewhere.
+    enables:
+      - Morning briefing shows the day's and week's external calendar events
+      - Deadline and event reminders push when Telegram or Resend is enabled
+    without:
+      - No external calendar awareness. Action items still carry due dates and
+        estimates, and the morning briefing still surfaces overdue and upcoming
+        items from the action register — that tracking is internal and always on.
+      - What is lost is visibility of events held in an outside calendar.
+    secrets:
+      - name: calendar-ics-url
+        description: A read-only ICS/webcal subscription URL. May embed a private
+          token, so it is stored as a secret rather than in config.
+    setup:
+      - |
+        In your calendar provider, find the read-only ICS/iCal subscription URL
+        (often "export", "secret address in iCal format", or "public URL").
+      - |
+        Store it as the secret (replace <vault> and <url>):
+          az keyvault secret set --vault-name <vault> --name calendar-ics-url --value <url>
+      - Use a read-only feed. The agent never writes to the calendar.
+    verify: fetch-secret calendar-ics-url
