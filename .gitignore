@@ -17,6 +17,9 @@ backend.hcl
 # Editor/OS noise
 .DS_Store
 scaffold/gate/never-egress.json
+# Written on the VM by bootstrap.sh / cloud-init — real secrets, never commit
+scaffold/infra/docker/castor.env
+scaffold/.provision-flags
 scaffold/gate/node_modules/
 scaffold/node_modules/
 scaffold/state/capabilities.json
