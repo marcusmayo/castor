@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # clean_demo.sh - reset Castor's SYNTHETIC demo to a clean state (mirrors Keel).
 #
 # Removes ONLY oracle-generated demo artifacts under AGENT_ROOT: the seeded
