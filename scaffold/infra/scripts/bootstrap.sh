@@ -10,7 +10,7 @@
 # the stack up, and smoke-tests the webchat liveliness probe.
 #
 # Contract (infra/docker/compose.yaml env_file): castor.env must define
-#   TOTP_SECRET, OPENROUTER_API_KEY, VISION_API_KEY, ANTHROPIC_BASE_URL
+#   TOTP_SECRET, OPENROUTER_API_KEY, VISION_API_KEY, ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY
 # Vault secrets (operator-set post-apply — see setup-wizard / capabilities.yaml):
 #   model-api-key  -> OPENROUTER_API_KEY   (required)
 #   vision-api-key -> VISION_API_KEY       (required)
@@ -100,6 +100,16 @@ OPENROUTER_API_KEY="$(kv_get model-api-key)"
 VISION_API_KEY="$(kv_get vision-api-key)"
 log "secrets fetched (model-api-key, vision-api-key)"
 
+# --- 3a. key-shape guard (structural: refuse to stand up on a placeholder) ---
+# The gateway is keyless and injects OPENROUTER_API_KEY per call as the ONLY
+# upstream auth. A placeholder or wrong secret in the vault reaches OpenRouter as
+# no auth header (401 "Missing Authentication header") and would surface only at
+# the oracle skill lane. Fail here instead: before castor.env and before compose up.
+case "$OPENROUTER_API_KEY" in
+  sk-or-*) : ;;
+  *) die "model-api-key in $KEY_VAULT_NAME is not an OpenRouter key (expected sk-or- prefix).\n  A placeholder or wrong secret was stored. Fix:\n  az keyvault secret set --vault-name $KEY_VAULT_NAME --name model-api-key --value sk-or-v1-REALKEY" ;;
+esac
+
 # --- 4. TOTP secret + QR (generated here, never fetched) ---
 read -r TOTP_SECRET TOTP_URL < <(python3 <<'PY'
 import base64, os, urllib.parse
@@ -129,6 +139,10 @@ TOTP_SECRET=${TOTP_SECRET}
 OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
 VISION_API_KEY=${VISION_API_KEY}
 ANTHROPIC_BASE_URL=http://gateway:4000
+# The claude CLI refuses to run without a non-empty key ("Not logged in"). The
+# gateway is keyless and injects OPENROUTER_API_KEY per call, so this value is
+# inert upstream: a fixed placeholder satisfies the CLI login gate and is safe.
+ANTHROPIC_API_KEY=sk-ant-placeholder-gateway-routed
 EOF
 umask 022
 log "wrote $ENV_FILE (0600)"
