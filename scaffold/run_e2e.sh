@@ -196,4 +196,5 @@ if [ "$SKIPPED" -gt 0 ]; then printf 'Skipped (surfaced loudly):%b\n' "$SKIPS"; 
 echo "Deterministic core satisfied: gate/egress, intake, pending, register, routing, digest, jobs."
 echo "Note: attested-vision interpret (VISION_API_KEY, direct Anthropic) is exercised"
 echo "      through the webchat interpret action on a live agent, not this script."
+echo "Reset this demo to a clean state with:  bash clean_demo.sh --yes"
 echo "================================================================"

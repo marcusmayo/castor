@@ -65,6 +65,10 @@ RUN cp /app/gate/never-egress.example.json /app/gate/never-egress.json
 # Test harness (fixture tests for the intake/skill lanes; run via docker exec).
 COPY tests/ /app/tests/
 
+# Acceptance oracle + demo reset (run via docker exec). Copied before the chown
+# below so they land owned by castor with their +x bit from git preserved.
+COPY run_e2e.sh clean_demo.sh /app/
+
 # Runtime state mount points, writable by castor whether or not volumes mount.
 # These stay EMPTY in the image (generic twin) — data arrives at runtime.
 RUN mkdir -p /app/state /app/knowledge /app/logs /app/inbox/drop \
