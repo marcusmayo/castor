@@ -1,67 +1,64 @@
-# Personal AI Operations Platform — Structural Twin (IaC)
+# Castor - a generic, deterministic-first AI agent
 
-Terraform that provisions a **digital twin of the structure** of a
-first-generation personal AI operations platform: the infrastructure, the
-hardened host, and the application filesystem skeleton. One `apply` produces
-a boot-to-shaped system. It contains **no data and no behavioral content** —
-every script is a stub and every state directory is empty.
+Castor is the application layer of a structural twin of a first-generation
+personal AI operations platform: an isolated, auditable agent whose scripts and
+skills are implemented and tested, with every state and knowledge directory
+empty by design so a fresh deploy stands up clean and generic. It carries no
+data and no behavioral content of the original - only the shape.
 
-Provenance: the architecture reproduces a first-generation personal system
-that was designed, built, and hardened to a 9/9 GREEN compliance posture.
-This twin stands on fully separate infrastructure, with the secrets layer
-deliberately modernized (Key Vault + managed identity replacing host-local
-encryption).
+The agent code lives in `scaffold/`. It is deployed as a fleet profile by
+**agent-fleet-iac** (Bicep + user-assigned managed identity):
+https://github.com/marcusmayo/agent-fleet-iac
+
+A self-contained **Terraform** deployment of the same twin (one `apply`, three
+providers, pushes this scaffold into its own repo) is preserved separately at:
+https://github.com/marcusmayo/castor-tf-iac
 
 ## Architecture
 
-```
-Operator devices
-      │  Cloudflare Tunnel (outbound-only, zero-trust)
-      ▼
-Azure VM (Ubuntu 24.04, Standard_B2ms, no public IP, deny-all NSG)
-  ├── sshd bound to 127.0.0.1 (systemd ssh.socket override)
-  ├── Node 22 LTS · Claude Code · cloudflared · fail2ban · unattended-upgrades
-  ├── User-assigned managed identity
-  │       ├── Key Vault  (Secrets User)  ← tunnel token, deploy key,
-  │       │                                 operator-supplied API secrets
-  │       └── Storage    (Blob Data Contributor) ← backup target
-  └── ~/<prefix>/  ← cloned at boot from a private GitHub scaffold repo
-       CLAUDE.md · .claude/commands/ · scripts/(13 stubs) · state/ ·
-       knowledge/ · System/ · inbox/ · logs/ · crontab.template (inactive)
-```
+Castor runs as a hardened container agent behind a Cloudflare Tunnel, with the
+secrets layer on Key Vault + managed identity (no host-local credentials).
 
-Terraform manages three providers in one graph: **azurerm** (VM, network,
-Key Vault, storage), **cloudflare** (tunnel, ingress config, DNS), and
-**github** (private scaffold repo, contents, read-only deploy key).
-
-## Repository layout
+- **Deterministic-first.** Mechanical work - parsing, matching, scoring, YAML
+  state - runs in pure Python/Node tools; the model is invoked only for genuine
+  semantic ambiguity.
+- **Keyless gateway.** Every model call routes through a LiteLLM gateway that
+  injects the provider key per call; the agent container holds no upstream key.
+- **Egress-gated.** Sensitive content is flagged by a tripwire before it can
+  leave; the gate sends only redacted text to the model via `claude -p`.
+- **Propose-don't-mutate.** The agent drafts; the operator creates or modifies
+  load-bearing state. Deletes are operator-explicit.
 
 ```
-terraform/    the template (state: remote Azure blob backend, day one)
-scaffold/     source of the deployed tree — pushed to its own repo by apply
-PLAYBOOK.md   prerequisites, apply sequence, post-apply steps, gap register,
-              and the ordered path from scaffold to operational
+scaffold/
+  gate/          egress tripwire + claude -p spine (redact, audit)
+  scripts/       intake, register, digest, model-routing, health, scan-tree, ...
+  webchat/       auth + pending panel + interpret actions
+  System/        capabilities, model-routing.yaml, pipeline stages, voice
+  tests/         fixture tests for the intake / skill lanes
+  infra/         Dockerfile, compose, bootstrap (managed-identity first-boot)
+  run_e2e.sh     end-to-end acceptance oracle
+  clean_demo.sh  reset demo state to a clean agent
 ```
 
-## Quick start
+## Deploy
 
-1. Read `PLAYBOOK.md` §1–2 (credentials + one-time state backend bootstrap).
-2. `cp terraform/terraform.tfvars.example terraform/terraform.tfvars` and fill in.
-3. `cd terraform && terraform init -backend-config=backend.hcl`
-4. `terraform plan`, then `terraform apply`.
-5. `PLAYBOOK.md` §5–6: populate operator secrets, verify the tunnel.
+Castor deploys through the fleet, not from this repo directly. See
+**agent-fleet-iac** for the one-command path: `deploy.sh` provisions the VM and
+per-agent Key Vault, `set-secrets.sh` sets the operator secrets with shape
+validation, and `bootstrap.sh` fetches them via managed identity and brings the
+stack up. Run the acceptance oracle on a fresh agent to prove the pipeline:
 
-## Security posture notes
+    docker exec -w /app castor-webchat bash run_e2e.sh --yes
 
-- No public IP; explicit deny-all inbound NSG; SSH reachable only through the
-  tunnel and bound to localhost.
-- No credential values appear in code or tfvars. Provider auth is
-  environment-only; operator secrets go straight into Key Vault post-apply.
-- The tunnel run token is cached in Terraform state (Terraform creates the
-  tunnel) — this is inherent, and it is why state lives in an encrypted,
-  access-controlled remote backend from day one. Treat backend access as
-  credential-equivalent.
-- Deliberate demo-posture choices, each flagged for hardening in
-  `PLAYBOOK.md` §11: Key Vault purge protection off, storage shared-key
-  access left enabled (identity-only on the VM regardless), Claude Code
-  version unpinned by default.
+The standalone Terraform twin (single `apply`, remote state, no fleet) lives at
+https://github.com/marcusmayo/castor-tf-iac.
+
+## Security posture
+
+- No public IP; deny-all inbound NSG; SSH reachable only through the tunnel and
+  bound to localhost.
+- No credential values in code. Provider/agent auth is environment- and
+  identity-only; operator secrets go straight into Key Vault.
+- The agent container is keyless - the LiteLLM gateway injects the upstream key
+  per call, and the egress gate flags sensitive content before it leaves.
