@@ -104,7 +104,10 @@ app.post('/pending/interpret', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-app.get('/', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'chat.html')));
+app.get('/', (req, res) => {
+  if (req.session && req.session.authed) return res.sendFile(path.join(__dirname, 'chat.html'));
+  return res.redirect('/login');
+});
 
 const server = http.createServer(app);
 
