@@ -13,6 +13,7 @@ services:
     environment:
       CASTOR_BIND: 0.0.0.0       # container netns; host exposure is the ports: line
       AGENT_ROOT: /app
+      AGENT_NAME: Castor         # notify label / from-slug (shared-core notify.js reads this)
       HOME: /home/castor         # claude CLI config dir
       GATEWAY_CONFIG_PATH: /app/infra/docker/litellm/openrouter.yaml
     ports:

@@ -15,7 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const AGENT_ROOT = process.env.AGENT_ROOT || path.join(process.env.HOME, 'castor');
+const AGENT_ROOT = process.env.AGENT_ROOT || path.dirname(__dirname);
 const DISK_WARN_PCT = Number(process.env.HEALTH_DISK_WARN_PCT || 85);
 
 function checkDisk() {

@@ -21,7 +21,9 @@
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const AGENT_ROOT = process.env.AGENT_ROOT || path.join(process.env.HOME, 'castor');
+const AGENT_ROOT = process.env.AGENT_ROOT || path.dirname(__dirname);
+const AGENT_LABEL = process.env.AGENT_NAME || 'Agent';
+const AGENT_SLUG = (process.env.AGENT_NAME || 'agent').toLowerCase();
 const FETCH_SECRET = process.env.FETCH_SECRET || '/opt/twin-bootstrap/fetch-secret.sh';
 
 let capability;
@@ -67,7 +69,7 @@ async function sendResend(subject, text, deps) {
   try {
     // Recipient is exactly the operator review address — the only permitted
     // recipient. The from-address uses the same review domain.
-    const from = process.env.RESEND_FROM || `castor@${(to.split('@')[1] || 'localhost')}`;
+    const from = process.env.RESEND_FROM || `${AGENT_SLUG}@${(to.split('@')[1] || 'localhost')}`;
     const res = await deps.fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
@@ -83,7 +85,7 @@ async function notify(topic, message, injected) {
     fetch: (injected && injected.fetch) || globalThis.fetch,
     getSecret: (injected && injected.getSecret) || getSecret,
   };
-  const subject = `[Castor] ${topic}`;
+  const subject = `[${AGENT_LABEL}] ${topic}`;
   const body = `${topic}: ${message}`;
   const results = [];
   results.push(await sendTelegram(body, deps));

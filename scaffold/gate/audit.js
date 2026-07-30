@@ -2,14 +2,15 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-// PORTED FROM keel-portfolio-management gate/audit.js.
-// Two deliberate deviations from the Keel original, both required for a
-// portable agent root. Everything else is byte-identical.
-//   1. Log path is env-driven (AGENT_ROOT) instead of hardcoded $HOME/keel.
-//      Castor must be re-targetable per the generic-profile ruling.
-//   2. The log directory is created if absent. The Keel original throws on
-//      appendFileSync when logs/ does not exist, which fails a fresh deploy.
-const AGENT_ROOT = process.env.AGENT_ROOT || path.join(process.env.HOME, 'castor');
+// Audit log path resolution (identical in every agent profile -- this file is
+// part of the shared core). The agent root is derived from this file's own
+// location: gate/audit.js sits at <root>/gate/, so path.dirname(__dirname) is
+// <root>, which is the container WORKDIR (/app) on every deploy. That makes the
+// log land on the persistent /app/logs volume for every profile, with no
+// hardcoded profile name and no reliance on an env var being set. AGENT_ROOT
+// and AUDIT_LOG remain honored as explicit overrides (compose sets AGENT_ROOT,
+// CI points AUDIT_LOG/AGENT_ROOT at a repo copy).
+const AGENT_ROOT = process.env.AGENT_ROOT || path.dirname(__dirname);
 const LOG = process.env.AUDIT_LOG || path.join(AGENT_ROOT, 'logs', 'audit.jsonl');
 
 function lastHash() {
@@ -25,7 +26,7 @@ function lastHash() {
 }
 
 // Append a hash-chained audit entry. `event` is a plain object.
-// Sensitive content is NOT stored — only metadata, counts, and hashes.
+// Sensitive content is NOT stored -- only metadata, counts, and hashes.
 function record(event) {
   const prev = lastHash();
   const entry = {
