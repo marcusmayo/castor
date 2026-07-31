@@ -96,7 +96,7 @@ async function pickColor(hex){try{const r=await (await fetch('/color',{method:'P
 async function handleColor(cmd){const arg=cmd.slice(6).trim();add(cmd,'me');if(!arg){add('Colors: '+Object.keys(PALETTE).join(', ')+' - or a #rrggbb hex. Usage: /color amber','sys');return;}try{const r=await (await fetch('/color',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:arg})})).json();if(r.ok){applyAccent(r.accent);add('Accent set to '+r.accent,'sys');}else{add('Unknown color. Options: '+Object.keys(r.palette||PALETTE).join(', ')+' or a #rrggbb hex.','err');}}catch(e){add('Color change failed: '+e,'err');}}
 function toggleCheat(){const c=document.getElementById('cheat');const open=c.style.display==='block';c.style.display=open?'none':'block';document.getElementById('caret').textContent=open?'▸':'▾';}
 
-// Model discoverability: show the active model and how to change it.
+// Model picker: choose which loaded OpenRouter model the routine tier uses.
 fetch('/model').then(r=>r.json()).then(d=>{
   const bar=document.getElementById('modelbar');
   if(!d.ok||!d.options){bar.textContent='model: (unavailable)';return;}
@@ -106,13 +106,12 @@ fetch('/model').then(r=>r.json()).then(d=>{
   const sel=document.getElementById('modelsel');
   sel.onchange=async()=>{
     const slug=sel.value;
-    try{const r=await(await fetch('/model/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug:slug})})).json();
-      if(r.ok){add('Model set to '+slug+' (applies to next message)','sys');}else{add('Model change failed: '+(r.error||'unknown'),'err');}}
-    catch(e){add('Model change failed: '+e,'err');}
+    try{
+      const r=await(await fetch('/model/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug:slug})})).json();
+      if(r.ok){add('Model set to '+slug+' (applies to next message)','sys');}
+      else{add('Model change failed: '+(r.error||'unknown'),'err');}
+    }catch(e){add('Model change failed: '+e,'err');}
   };
-}).catch(()=>{document.getElementById('modelbar').textContent='model: (unavailable)';});
-  const def=d.tiers.find(t=>t.default)||d.tiers[0];
-  bar.innerHTML='model: <b>'+def.model_name+'</b> ('+def.tier+') · change: <code>node scripts/model-routing.js set &lt;tier&gt; --slug openrouter/&lt;v&gt;/&lt;m&gt;</code>';
 }).catch(()=>{document.getElementById('modelbar').textContent='model: (unavailable)';});
 
 let ws, streaming=false, current=null;
