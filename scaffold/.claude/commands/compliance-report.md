@@ -1,7 +1,7 @@
 # /compliance-report — Unified Compliance Report
 
 Generate the unified Tier 1 (summary) / Tier 2 (evidence) report across the
-nine-point posture. Read-only aggregation; output to `state/weekly-reports/`.
+nine-point posture. Read-only aggregation; the report is shown in chat (Tier 1 + Tier 2). No file is written.
 
 ## Posture checklist and evidence sources
 1. Network exposure — deny-all NSG, no public IP (infrastructure outputs).
@@ -13,22 +13,38 @@ nine-point posture. Read-only aggregation; output to `state/weekly-reports/`.
    declined" if the azure_backup capability is off).
 6. Kill switch — last rehearsal date recorded.
 7. Vulnerability management — last `npm audit` / update run.
-8. Audit — `node scripts/audit-log.js verify` result (chain intact or broken).
+8. Audit — chain verification result from `state/compliance/audit-verify.json` (intact or broken).
 9. Intrusion prevention — fail2ban / SSH alerting status.
 
 ## Procedure
-1. For each of the nine points, gather the evidence named above. Where a source
-   is a capability that is declined (check `node scripts/setup-wizard.js
-   --status`), record it as "not enabled" rather than "failing".
-2. Run `node scripts/audit-log.js verify` and record the chain status verbatim
-   for point 8.
-3. Tier 1: a one-line status per point (GREEN / ATTENTION / NOT ENABLED).
-4. Tier 2: the underlying evidence per point (timestamps, counts, command
-   output). Never include raw PII — counts and statuses only.
-5. Write the report to `state/weekly-reports/<YYYY-MM-DD>-compliance.md`.
+Evidence is refreshed server-side immediately before this report runs and written
+to `state/compliance/` (deterministic; the report never invokes node and never
+searches the filesystem). Derive every point's status ONLY from the rules below.
+Never infer status from code presence, `node_modules`, config-file contents,
+capability descriptions, or any file outside `state/compliance/`.
+
+Status vocabulary is exactly three values — GREEN, ATTENTION, NOT ENABLED.
+Do not introduce any other status label anywhere in the report.
+
+1. Point 8 (Audit): read `state/compliance/audit-verify.json`. If its `output`
+   reports the chain intact, GREEN; if broken, ATTENTION. Record the `output`
+   and `ranAt`.
+2. Point 5 (Backup): read `state/compliance/capability-status.json`. If the
+   `azure_backup` capability is enabled, GREEN; if it is not configured or
+   declined, NOT ENABLED. Record the relevant line and `ranAt`.
+3. Points 1, 2, 3, 4, 6, 7, and 9: no evidence file exists for these in
+   `state/compliance/`, so each is ATTENTION — the control may be provisioned
+   at the infrastructure layer but is not verifiable from agent-side evidence.
+   Do not search for, infer, or substitute alternative evidence for these points.
+4. Tier 1: a table of one-line statuses, one row per point, using only the three
+   permitted values, followed by a verdict line counting each value.
+5. Tier 2: the underlying evidence per point. For points 5 and 8, the state-file
+   `output` and `ranAt`. For every ATTENTION point, the fixed line: "No evidence
+   file in state/compliance/; provision an evidence writer to confirm." Never
+   include raw PII — counts and statuses only.
 
 ## Output
-- A file under `state/weekly-reports/`, and the Tier 1 summary shown in chat.
+- The Tier 1 summary and Tier 2 evidence, shown in chat. No file is written.
 
 ## Refusal / guardrails
 - Read-only. Gathers evidence; changes no posture.

@@ -207,6 +207,15 @@ wss.on('connection', (ws) => {
     ws.send(JSON.stringify({ type: 'start' }));
     auditRecord({ action: 'WEBCHAT', status: 'MODEL_CALL', tier, model });
 
+    // /compliance-report: refresh governance evidence server-side (deterministic,
+    // execFileSync) before the skill reads state/compliance/*.json. Keeps the LLM
+    // out of the execution path; the skill only aggregates.
+    const _rcmd = prompt.trim();
+    if (_rcmd === '/compliance-report' || _rcmd.startsWith('/compliance-report ')) {
+      writeCompliance('audit-verify', 'node', ['scripts/audit-log.js', 'verify'], 30000);
+      writeCompliance('capability-status', 'node', ['scripts/setup-wizard.js', '--status'], 30000);
+    }
+
     const child = spawn('claude', ['-p', prompt, '--model', model, '--output-format', 'stream-json', '--verbose'],
       { cwd: AGENT_ROOT, env: process.env });
 
@@ -234,6 +243,39 @@ wss.on('connection', (ws) => {
       ws.send(JSON.stringify({ type: 'done' }));
     });
   });
+});
+
+// Deterministic governance evidence writer (module-level; hoisted, used by the
+// /compliance-report WS pre-step above and the two routes below). Runs a
+// read-only script via execFileSync and persists {ok, output, ranAt} to
+// state/compliance/<name>.json. Never throws: a broken audit chain (audit-log
+// exits 1) is captured as ok:false with the real output, not a route failure.
+function writeCompliance(name, bin, args, timeoutMs) {
+  const dir = path.join(AGENT_ROOT, 'state', 'compliance');
+  let rec;
+  try {
+    const out = execFileSync(bin, args, { cwd: AGENT_ROOT, encoding: 'utf8', timeout: timeoutMs });
+    rec = { ok: true, output: out, ranAt: new Date().toISOString() };
+  } catch (e) {
+    rec = { ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e), ranAt: new Date().toISOString() };
+  }
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, name + '.json'), JSON.stringify(rec, null, 2));
+  } catch (e) {
+    rec.persistError = String(e);
+  }
+  return rec;
+}
+
+// Governance: refresh + return the audit-chain verification (scripts/audit-log.js).
+app.get('/run-audit-verify', requireAuth, (req, res) => {
+  res.json(writeCompliance('audit-verify', 'node', ['scripts/audit-log.js', 'verify'], 30000));
+});
+
+// Governance: refresh + return capability status (scripts/setup-wizard.js --status).
+app.get('/run-capability-status', requireAuth, (req, res) => {
+  res.json(writeCompliance('capability-status', 'node', ['scripts/setup-wizard.js', '--status'], 30000));
 });
 
 const PORT = parseInt(process.env.CASTOR_PORT || '8443', 10);
