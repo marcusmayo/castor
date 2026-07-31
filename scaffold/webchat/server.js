@@ -143,7 +143,10 @@ const wss = new WebSocketServer({ noServer: true });
 
 server.on('upgrade', (req, socket, head) => {
   sessionParser(req, {}, () => {
-    if (!req.session || !req.session.authed) {
+    // Mirror requireAuth: Cloudflare Access validated the request at the edge
+    // (Cf-Access-* header present == authenticated), OR a direct session is authed.
+    const cfAuthed = req.headers['cf-access-jwt-assertion'] || req.headers['cf-access-client-id'];
+    if (!cfAuthed && (!req.session || !req.session.authed)) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return;
     }
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
