@@ -29,6 +29,7 @@ button.send{background:var(--accent);border:0;border-radius:8px;color:var(--acce
   .worksteps{display:none;margin-top:6px;padding:8px 12px;background:#141414;border:1px solid #242424;border-radius:8px;color:#9a9a9a;font-family:ui-monospace,monospace;font-size:13px}
   .worksteps.open{display:block}
   .worksteps div{line-height:1.6}
+  .modelbar select{font-size:12px;font-family:monospace;background:#262626;color:var(--accent);border:1px solid #444;border-radius:4px;padding:2px 4px;cursor:pointer}
 </style></head><body>
 <header>
   <span class="brand">Castor</span>
@@ -98,7 +99,18 @@ function toggleCheat(){const c=document.getElementById('cheat');const open=c.sty
 // Model discoverability: show the active model and how to change it.
 fetch('/model').then(r=>r.json()).then(d=>{
   const bar=document.getElementById('modelbar');
-  if(!d.ok){bar.textContent='model: (unavailable)';return;}
+  if(!d.ok||!d.options){bar.textContent='model: (unavailable)';return;}
+  let opts='';
+  for(const o of d.options){opts+='<option value="'+o.slug+'"'+(o.slug===d.active?' selected':'')+'>'+o.label+'</option>';}
+  bar.innerHTML='model: <select id="modelsel">'+opts+'</select>';
+  const sel=document.getElementById('modelsel');
+  sel.onchange=async()=>{
+    const slug=sel.value;
+    try{const r=await(await fetch('/model/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug:slug})})).json();
+      if(r.ok){add('Model set to '+slug+' (applies to next message)','sys');}else{add('Model change failed: '+(r.error||'unknown'),'err');}}
+    catch(e){add('Model change failed: '+e,'err');}
+  };
+}).catch(()=>{document.getElementById('modelbar').textContent='model: (unavailable)';});
   const def=d.tiers.find(t=>t.default)||d.tiers[0];
   bar.innerHTML='model: <b>'+def.model_name+'</b> ('+def.tier+') · change: <code>node scripts/model-routing.js set &lt;tier&gt; --slug openrouter/&lt;v&gt;/&lt;m&gt;</code>';
 }).catch(()=>{document.getElementById('modelbar').textContent='model: (unavailable)';});

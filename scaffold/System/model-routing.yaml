@@ -17,7 +17,7 @@
 
 tiers:
   triage:
-    model_name: claude-3-5-haiku-20241022
+    model_name: glm-5.2
     openrouter_slug: openrouter/z-ai/glm-5.2
     use_for: [inbox classification, quick lookups]
   routine:
@@ -25,8 +25,8 @@ tiers:
     openrouter_slug: openrouter/deepseek/deepseek-v4-pro
     use_for: [drafts, digests, skill execution, reports]
   complex:
-    model_name: deepseek-v4-pro
-    openrouter_slug: openrouter/deepseek/deepseek-v4-pro
+    model_name: kimi-k3
+    openrouter_slug: openrouter/moonshotai/kimi-k3
     use_for: [multi-step reasoning, build sessions]
 
 default_tier: routine

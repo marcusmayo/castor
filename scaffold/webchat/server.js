@@ -21,7 +21,7 @@ const speakeasy = require('speakeasy');
 const path = require('path');
 const http = require('http');
 const readline = require('readline');
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 
 const AGENT_ROOT = process.env.AGENT_ROOT || path.join(process.env.HOME, 'castor');
 
@@ -77,9 +77,34 @@ app.post('/logout', (req, res) => req.session.destroy(() => res.json({ ok: true 
 app.get('/health/liveliness', (req, res) => res.status(200).send('ok'));
 
 // --- current model routing, for the UI to display the active model ---------
+const MODEL_LABELS = {
+  'openrouter/deepseek/deepseek-v4-pro': 'DeepSeek V4 Pro',
+  'openrouter/z-ai/glm-5.2': 'GLM 5.2',
+  'openrouter/moonshotai/kimi-k3': 'Kimi K3',
+};
+function modelLabel(slug) { return MODEL_LABELS[slug] || String(slug).split('/').pop(); }
 app.get('/model', requireAuth, (req, res) => {
-  try { res.json({ ok: true, tiers: modelRouting.list() }); }
-  catch (e) { res.json({ ok: false, error: e.message }); }
+  try {
+    const tiers = modelRouting.list();
+    // active = routine tier's slug; options = distinct loaded model slugs
+    let activeSlug = null; const seen = {}; const options = [];
+    for (const t of tiers) {
+      const slug = t.openrouter_slug || t.slug;
+      if (t.tier === 'routine' || t.name === 'routine') activeSlug = slug;
+      if (slug && !seen[slug]) { seen[slug] = 1; options.push({ slug: slug, label: modelLabel(slug) }); }
+    }
+    res.json({ ok: true, tiers: tiers, active: activeSlug, options: options });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+app.post('/model/select', requireAuth, (req, res) => {
+  try {
+    const slug = (req.body && req.body.slug) || '';
+    if (!MODEL_LABELS[slug]) return res.status(400).json({ ok: false, error: 'model not in allowed set' });
+    const name = String(slug).split('/').pop();
+    execFileSync('node', ['scripts/model-routing.js', 'set', 'routine', '--slug', slug, '--name', name], { cwd: AGENT_ROOT, encoding: 'utf8', timeout: 15000 });
+    try { auditRecord({ action: 'MODEL_SELECT', status: 'OK', tier: 'routine', slug: slug }); } catch (e) {}
+    res.json({ ok: true, active: slug });
+  } catch (e) { res.status(500).json({ ok: false, error: (e.stdout||'') + (e.stderr||'') + String(e) }); }
 });
 
 // --- per-instance UI accent color (set via chat: /color <name|hex>) ----------
