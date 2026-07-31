@@ -90,13 +90,14 @@ app.get('/model', requireAuth, (req, res) => {
   try {
     const tiers = modelRouting.list();
     // active = routine tier's slug; options = distinct loaded model slugs
-    let activeSlug = null; const seen = {}; const options = [];
+    let routineSlug = null; const seen = {}; const options = [];
     for (const t of tiers) {
       const slug = t.openrouter_slug || t.slug;
-      if (t.tier === 'routine' || t.name === 'routine') activeSlug = slug;
+      if (t.tier === 'routine' || t.name === 'routine') routineSlug = slug;
       if (slug && !seen[slug]) { seen[slug] = 1; options.push({ slug: slug, label: modelLabel(slug) }); }
     }
-    res.json({ ok: true, tiers: tiers, active: activeSlug, options: options });
+    const active = modelRouting.getSelected() || routineSlug;
+    res.json({ ok: true, tiers: tiers, active: active, options: options });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 app.post('/model/select', requireAuth, (req, res) => {
@@ -104,7 +105,7 @@ app.post('/model/select', requireAuth, (req, res) => {
     const slug = (req.body && req.body.slug) || '';
     if (!MODEL_LABELS[slug]) return res.status(400).json({ ok: false, error: 'model not in allowed set' });
     const name = String(slug).split('/').pop();
-    execFileSync('node', ['scripts/model-routing.js', 'set', 'routine', '--slug', slug, '--name', name], { cwd: AGENT_ROOT, encoding: 'utf8', timeout: 15000 });
+    execFileSync('node', ['scripts/model-routing.js', 'set-selected', '--slug', slug], { cwd: AGENT_ROOT, encoding: 'utf8', timeout: 15000 });
     try { auditRecord({ action: 'MODEL_SELECT', status: 'OK', tier: 'routine', slug: slug }); } catch (e) {}
     res.json({ ok: true, active: slug });
   } catch (e) { res.status(500).json({ ok: false, error: (e.stdout||'') + (e.stderr||'') + String(e) }); }
@@ -201,7 +202,7 @@ wss.on('connection', (ws) => {
     }
 
     let model;
-    try { model = modelRouting.resolve(tier); }
+    try { model = msg.tier ? modelRouting.resolve(tier) : modelRouting.resolveSelected(); }
     catch (e) { ws.send(JSON.stringify({ type: 'error', text: 'Model routing error: ' + e.message })); ws.send(JSON.stringify({ type: 'done' })); return; }
 
     ws.send(JSON.stringify({ type: 'start' }));
