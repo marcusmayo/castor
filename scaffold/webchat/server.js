@@ -81,6 +81,9 @@ const MODEL_LABELS = {
   'openrouter/deepseek/deepseek-v4-pro': 'DeepSeek V4 Pro',
   'openrouter/z-ai/glm-5.2': 'GLM 5.2',
   'openrouter/moonshotai/kimi-k3': 'Kimi K3',
+  'openrouter/anthropic/claude-haiku-4.5': 'Claude Haiku 4.5',
+  'openrouter/anthropic/claude-sonnet-4.5': 'Claude Sonnet 4.5',
+  'openrouter/anthropic/claude-opus-4.8': 'Claude Opus 4.8',
 };
 function modelLabel(slug) { return MODEL_LABELS[slug] || String(slug).split('/').pop(); }
 app.get('/model', requireAuth, (req, res) => {

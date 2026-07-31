@@ -29,6 +29,21 @@ tiers:
     openrouter_slug: openrouter/moonshotai/kimi-k3
     use_for: [multi-step reasoning, build sessions]
 
+  claude_haiku:
+    model_name: claude-haiku-4.5
+    openrouter_slug: openrouter/anthropic/claude-haiku-4.5
+    use_for:
+      - fast anthropic
+  claude_sonnet:
+    model_name: claude-sonnet-4.5
+    openrouter_slug: openrouter/anthropic/claude-sonnet-4.5
+    use_for:
+      - balanced anthropic
+  claude_opus:
+    model_name: claude-opus-4.8
+    openrouter_slug: openrouter/anthropic/claude-opus-4.8
+    use_for:
+      - max anthropic
 default_tier: routine
 
 # Vision model for the attested-image interpret path (pending panel). This is
