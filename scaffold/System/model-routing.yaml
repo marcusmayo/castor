@@ -21,8 +21,8 @@ tiers:
     openrouter_slug: openrouter/z-ai/glm-5.2
     use_for: [inbox classification, quick lookups]
   routine:
-    model_name: claude-sonnet-4-5
-    openrouter_slug: openrouter/moonshotai/kimi-k3
+    model_name: deepseek-v4-pro
+    openrouter_slug: openrouter/deepseek/deepseek-v4-pro
     use_for: [drafts, digests, skill execution, reports]
   complex:
     model_name: deepseek-v4-pro
