@@ -51,6 +51,9 @@ RUN cd /app/webchat && npm ci --omit=dev
 
 # Code whitelist — scaffold contents only, no state/knowledge data.
 COPY gate/ /app/gate/
+
+# Fleet-core drift gate (gate/): vendored gate modules must byte-match agent-fleet-iac/core/gate.
+RUN bash /app/gate/verify-core.sh /app/gate
 COPY scripts/ /app/scripts/
 
 # Fleet-core drift gate: vendored shared module must byte-match agent-fleet-iac/core.
