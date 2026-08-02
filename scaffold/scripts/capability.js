@@ -1,5 +1,5 @@
 /**
- * capability.js — capability registry reader and structural guard.
+ * capability.js -- capability registry reader and structural guard.
  *
  * The registry (system/capabilities.yaml) is shipped and committed. The
  * operator's choices live in state/capabilities.json, which is gitignored
@@ -8,7 +8,7 @@
  * Guard contract: a script that needs an optional integration calls
  * requireCapability(id) at the top. If the capability is not enabled the
  * process exits non-zero with a named message telling the operator exactly
- * how to turn it on. It does not run and quietly do nothing — the same
+ * how to turn it on. It does not run and quietly do nothing -- the same
  * fail-closed principle as the egress tripwire.
  *
  * This module never reads, writes, or logs a secret value.
@@ -18,9 +18,9 @@ const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
 
-const AGENT_ROOT = process.env.AGENT_ROOT || path.join(process.env.HOME, 'castor');
+const AGENT_ROOT = process.env.AGENT_ROOT || path.dirname(__dirname);
 const REGISTRY = process.env.CAPABILITY_REGISTRY
-  || path.join(AGENT_ROOT, 'System', 'capabilities.yaml');
+  || path.join(AGENT_ROOT, 'system', 'capabilities.yaml');
 const STATE = process.env.CAPABILITY_STATE
   || path.join(AGENT_ROOT, 'state', 'capabilities.json');
 
@@ -62,7 +62,7 @@ function saveState(state) {
 }
 
 // 'enabled' | 'declined' | 'unset'. Required capabilities are never 'unset'
-// in effect — they are reported as configured or not, and callers must treat
+// in effect -- they are reported as configured or not, and callers must treat
 // a missing required capability as fatal.
 function status(id) {
   const entry = loadState()[id];
@@ -97,7 +97,7 @@ function requireCapability(id) {
 
   const lines = [
     '',
-    `${cap.name} is not enabled — this process will not start.`,
+    `${cap.name} is not enabled -- this process will not start.`,
     '',
     `Capability "${cap.id}" ${reason}.`,
     '',
