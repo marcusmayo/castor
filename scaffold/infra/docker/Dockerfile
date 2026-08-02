@@ -54,7 +54,7 @@ COPY gate/ /app/gate/
 COPY scripts/ /app/scripts/
 COPY .claude/ /app/.claude/
 COPY webchat/ /app/webchat/
-COPY System/ /app/System/
+COPY system/ /app/system/
 COPY CLAUDE.md MEMORY.md /app/
 COPY crontab.template /app/
 

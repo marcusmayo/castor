@@ -13,10 +13,10 @@ Load-bearing principle: guardrails ship before the capability they guard.
 - [ ] Read-only boundaries for any external system integrations
 
 # Operating Principles
-- [ ] Operator profile reference (System/operator-profile.yaml)
-- [ ] Voice profile loaded on every draft (System/voice-profile.yaml)
+- [ ] Operator profile reference (system/operator-profile.yaml)
+- [ ] Voice profile loaded on every draft (system/voice-profile.yaml)
 - [ ] Context budget rules — what to load, what never to load
-- [ ] Session completion protocol (System/session-tracking.md)
+- [ ] Session completion protocol (system/session-tracking.md)
 
 # Data Boundaries
 - [ ] Define what content classes this system may ingest

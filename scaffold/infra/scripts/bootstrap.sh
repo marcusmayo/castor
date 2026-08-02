@@ -147,7 +147,7 @@ EOF
 umask 022
 log "wrote $ENV_FILE (0600)"
 
-# --- 6. regenerate the gateway config from System/model-routing.yaml ---
+# --- 6. regenerate the gateway config from system/model-routing.yaml ---
 # The compose bind-mount ./litellm shadows the image copy, so the host file must
 # be present and current. Regenerate fresh; fall back loudly to the committed one.
 if docker run --rm -w /app -e AGENT_ROOT=/app "$IMAGE" \

@@ -8,7 +8,7 @@ no writes, no sends, no PII in the output.
   (new since yesterday), or `node scripts/intake.js --status` for counts.
 - Action register: `state/action-register.md` via
   `node scripts/register.js schedule <today> 7` (overdue + due within 7 days).
-- Pipeline: `state/pipeline/*.yaml` grouped by `System/pipeline-stages.yaml`.
+- Pipeline: `state/pipeline/*.yaml` grouped by `system/pipeline-stages.yaml`.
 - Calendar (only if enabled): the `calendar` capability. If
   `node scripts/setup-wizard.js --status` shows it enabled, read the ICS feed
   via `fetch-secret calendar-ics-url` and include today's and this week's

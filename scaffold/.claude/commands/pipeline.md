@@ -4,13 +4,13 @@ Report portfolio status across governance stages. Read-only: this skill never
 mutates state, never sends anything, and produces no PII in its output.
 
 ## Inputs
-- Stage vocabulary: `System/pipeline-stages.yaml` (`stages`, `terminal`).
+- Stage vocabulary: `system/pipeline-stages.yaml` (`stages`, `terminal`).
 - Items: every `state/pipeline/*.yaml` EXCEPT `_item-template.yaml`, each
   conforming to that template (id, name, stage, owner, status, opened, updated,
   next_action, stakeholders, links, notes).
 
 ## Procedure
-1. Read `System/pipeline-stages.yaml`. Hold `stages` (ordered) and `terminal`.
+1. Read `system/pipeline-stages.yaml`. Hold `stages` (ordered) and `terminal`.
 2. Read every `state/pipeline/*.yaml` except `_item-template.yaml`. If a file
    fails to parse, list it under a "could not read" note and continue — do not
    abort the whole report on one bad file.

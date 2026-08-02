@@ -4,14 +4,14 @@ Draft a communication in the operator's voice. Output to the draft queue for
 review — this skill NEVER sends.
 
 ## Inputs
-- `System/voice-profile.yaml` — tone, structure, and phrasing to match.
+- `system/voice-profile.yaml` — tone, structure, and phrasing to match.
 - The relevant stakeholder page in `knowledge/people/<name>.md` if the draft is
   addressed to or about a tracked person. If no page exists, proceed without it
   and note that no stakeholder context was found — do not invent details.
 - The operator's stated intent for the message (the prompt).
 
 ## Procedure
-1. Load `System/voice-profile.yaml`. If it is missing or still a template,
+1. Load `system/voice-profile.yaml`. If it is missing or still a template,
    state that the voice profile is not yet populated and draft in a neutral
    professional register.
 2. If a recipient/subject maps to a `knowledge/people/*.md` page, read it for

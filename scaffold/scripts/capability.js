@@ -1,7 +1,7 @@
 /**
  * capability.js — capability registry reader and structural guard.
  *
- * The registry (System/capabilities.yaml) is shipped and committed. The
+ * The registry (system/capabilities.yaml) is shipped and committed. The
  * operator's choices live in state/capabilities.json, which is gitignored
  * because it is deployment state, not code.
  *

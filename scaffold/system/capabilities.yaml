@@ -39,7 +39,7 @@ capabilities:
           az keyvault secret set --vault-name <vault> --name model-api-key --value <value>
       - If routing through LiteLLM, set ANTHROPIC_BASE_URL to the gateway
         address in the service environment, and pin real model IDs in
-        System/model-routing.yaml (the shipped file has placeholders).
+        system/model-routing.yaml (the shipped file has placeholders).
     verify: fetch-secret model-api-key
 
   - id: telegram

@@ -8,7 +8,7 @@ every state write happens only after explicit operator confirmation.
 - `inbox/` admitted files and, for each, its `<name>.flags.json` sidecar
   (written by the intake lane): `extraction.scan_state`, `tripwire.flagged`,
   `has_vision_pending`, `attachments`.
-- Stage vocabulary: `System/pipeline-stages.yaml`.
+- Stage vocabulary: `system/pipeline-stages.yaml`.
 - Action register: `state/action-register.md` (managed via
   `scripts/register.js` — never hand-edit IDs).
 - Tracked items: `state/pipeline/*.yaml`.
@@ -34,7 +34,7 @@ every state write happens only after explicit operator confirmation.
    next ID deterministically and computes the due date).
 6. If an item affects a tracked pipeline item, PROPOSE the edit to the matching
    `state/pipeline/<id>.yaml` as a shown unified diff. Apply only on explicit
-   confirmation. Choose `stage` values only from `System/pipeline-stages.yaml`.
+   confirmation. Choose `stage` values only from `system/pipeline-stages.yaml`.
 7. After the operator confirms handling of an item, move that file (and its
    sidecars) to `inbox/archive/`. Items classified `info` or `discard` are
    archived once acknowledged.

@@ -12,3 +12,4 @@ scaffold/gate/node_modules/
 scaffold/node_modules/
 scaffold/state/capabilities.json
 scaffold/webchat/node_modules/
+*.bak

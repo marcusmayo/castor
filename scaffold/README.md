@@ -18,14 +18,14 @@ Layout mirrors the original architecture:
     state/pipeline/      YAML item files — one per tracked project / use case
     state/               action register, logs, draft queue (empty)
     knowledge/           reference pages (empty)
-    System/              operator, voice, and model-routing profiles (placeholders)
+    system/              operator, voice, and model-routing profiles (placeholders)
     inbox/               incoming message queue (empty)
     logs/                runtime logs (empty)
     crontab.template     full cron schedule — NOT installed by default
 
 ## Changing the model
 
-Model routing is defined in `System/model-routing.yaml` and is the single
+Model routing is defined in `system/model-routing.yaml` and is the single
 source of truth for both the model `claude -p` requests and the OpenRouter
 model it maps to. Change a model with one command — no code edit, no restart
 (the change takes effect on the next call):
