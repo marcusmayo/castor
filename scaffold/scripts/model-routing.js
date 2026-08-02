@@ -1,5 +1,5 @@
 /**
- * model-routing.js — tier resolver, change CLI, and gateway-config generator.
+ * model-routing.js -- tier resolver, change CLI, and gateway-config generator.
  *
  * system/model-routing.yaml is the single source of truth for model routing.
  * This module resolves a tier to the model_name that `claude -p` requests,
@@ -8,7 +8,7 @@
  * command instead of editing YAML by hand.
  *
  * The file is read at call time, so a change takes effect on the next
- * invocation — no restart, no code change.
+ * invocation -- no restart, no code change.
  *
  * CLI:
  *   node scripts/model-routing.js resolve <tier>        -> model_name for --model
@@ -21,7 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
 
-const AGENT_ROOT = process.env.AGENT_ROOT || path.join(process.env.HOME, 'castor');
+const AGENT_ROOT = process.env.AGENT_ROOT || path.dirname(__dirname);
 // Image default (baked, read-only) vs writable state copy (a volume, persists
 // across restarts). A `set` writes the state copy; reads prefer it so an
 // operator's model change survives a container restart. On a fresh deploy the
@@ -33,7 +33,7 @@ const GATEWAY_CONFIG = process.env.GATEWAY_CONFIG_PATH || path.join(AGENT_ROOT, 
 function readPath() { return fs.existsSync(ROUTING_STATE) ? ROUTING_STATE : ROUTING_DEFAULT; }
 const ROUTING = ROUTING_STATE; // back-compat export
 
-const HEADER = `# Model routing — tier -> model policy, and the single source of truth for both
+const HEADER = `# Model routing -- tier -> model policy, and the single source of truth for both
 # the model \`claude -p\` requests (model_name) and the OpenRouter model it maps
 # to (openrouter_slug).
 #
@@ -102,7 +102,7 @@ function gatewayConfig() {
   }
   const cfg = { model_list, litellm_settings: { drop_params: true } };
   const banner = '# GENERATED from system/model-routing.yaml by scripts/model-routing.js.\n' +
-                 '# Do not edit by hand — change models via: model-routing.js set <tier> --slug ...\n' +
+                 '# Do not edit by hand -- change models via: model-routing.js set <tier> --slug ...\n' +
                  '# Key = OPENROUTER_API_KEY in the service environment.\n';
   return banner + yaml.dump(cfg, { lineWidth: 100, noRefs: true });
 }
@@ -215,7 +215,7 @@ if (require.main === module) {
       if (!tier) { console.error('usage: set <tier> --slug openrouter/<v>/<m> [--name <model_name>]'); process.exit(1); }
       const updated = set(tier, { slug: flags.slug, name: flags.name });
       console.log(`set ${tier}: ${updated.model_name} -> ${updated.openrouter_slug}`);
-      if (regenerateGateway()) console.log('gateway config regenerated — restart the gateway container for it to take effect');
+      if (regenerateGateway()) console.log('gateway config regenerated -- restart the gateway container for it to take effect');
     } else {
       console.error('commands: resolve <tier> | list | gateway-config | vision | set-vision --model ... [--url ...] | set <tier> --slug ... [--name ...]');
       process.exit(1);
