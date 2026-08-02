@@ -26,7 +26,7 @@ const AGENT_ROOT = process.env.AGENT_ROOT || path.join(process.env.HOME, 'castor
 // across restarts). A `set` writes the state copy; reads prefer it so an
 // operator's model change survives a container restart. On a fresh deploy the
 // state copy does not exist yet, so reads fall back to the image default.
-const ROUTING_DEFAULT = process.env.MODEL_ROUTING || path.join(AGENT_ROOT, 'System', 'model-routing.yaml');
+const ROUTING_DEFAULT = process.env.MODEL_ROUTING || path.join(AGENT_ROOT, 'system', 'model-routing.yaml');
 const ROUTING_STATE = process.env.MODEL_ROUTING_STATE || path.join(AGENT_ROOT, 'state', 'model-routing.yaml');
 // The LiteLLM gateway config regenerated after a change (mounted, read-write).
 const GATEWAY_CONFIG = process.env.GATEWAY_CONFIG_PATH || path.join(AGENT_ROOT, 'infra', 'docker', 'litellm', 'openrouter.yaml');
