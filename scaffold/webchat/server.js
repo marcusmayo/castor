@@ -11,13 +11,12 @@
  *     pending panel and attested-vision interpret path are added in later
  *     stages.
  *
- * Binds to loopback behind the Cloudflare tunnel. TOTP_SECRET is required.
+ * Binds to loopback behind the Cloudflare tunnel. Auth is edge-only (Cloudflare Access).
  */
 
 try { require('dotenv').config(); } catch { /* env-first; no .env needed */ }
 const express = require('express');
 const session = require('express-session');
-const speakeasy = require('speakeasy');
 const auth = require('../scripts/auth.js');
 const path = require('path');
 const http = require('http');
@@ -30,8 +29,7 @@ const { checkTripwire } = require(path.join(AGENT_ROOT, 'gate', 'tripwire'));
 const { record: auditRecord } = require(path.join(AGENT_ROOT, 'gate', 'audit'));
 const modelRouting = require(path.join(AGENT_ROOT, 'scripts', 'model-routing'));
 
-const TOTP_SECRET = process.env.TOTP_SECRET;
-if (!TOTP_SECRET) { console.error('FATAL: TOTP_SECRET not set'); process.exit(1); }
+// app-TOTP removed: Cloudflare Access is the sole authenticator (edge-only).
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -55,7 +53,7 @@ try {
   const _m = require('fs').readFileSync(require('path').join(require('path').dirname(__dirname), 'system', 'agent.yaml'), 'utf8').match(/^\s*agent_name:\s*["']?([^"'\n]+?)["']?\s*$/m);
   if (_m) AGENT_NAME = _m[1].trim();
 } catch (e) { /* default */ }
-auth.mountAuth(app, { webchatDir: __dirname, totpSecret: TOTP_SECRET, agentName: AGENT_NAME, speakeasy });
+auth.mountAuth(app, { webchatDir: __dirname, agentName: AGENT_NAME });
 
 // --- container liveness probe (unauthenticated, 200 only) ------------------
 app.get('/health/liveliness', (req, res) => res.status(200).send('ok'));
