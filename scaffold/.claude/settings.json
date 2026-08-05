@@ -1,3 +1,13 @@
 {
-  "note": "Populate model preferences and tool permissions before first use."
+  "permissions": {
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "WebSearch",
+      "WebFetch"
+    ]
+  }
 }

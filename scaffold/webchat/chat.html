@@ -35,6 +35,7 @@ button.send{background:var(--accent);border:0;border-radius:8px;color:var(--acce
   <span class="brand">{{AGENT_NAME}}</span>
   <span class="modelbar" id="modelbar">model: …</span>
   <span style="display:flex;align-items:center;gap:10px">
+    <button id="webToggle" onclick="toggleWeb()" title="Web research access" style="background:#1e1e1e;border:1px solid #2e2e2e;border-radius:6px;color:#aaa;padding:6px 12px;cursor:pointer;font-size:13px">web: …</button>
     <span class="swatch" id="accentSwatch" onclick="toggleSwatches()" title="accent color (click to change)"></span>
     <button class="logout" onclick="location.href='/logout'">Log out</button>
   </span>
@@ -113,6 +114,13 @@ fetch('/model').then(r=>r.json()).then(d=>{
     }catch(e){add('Model change failed: '+e,'err');}
   };
 }).catch(()=>{document.getElementById('modelbar').textContent='model: (unavailable)';});
+
+// Web research access: reflect + toggle the per-agent runtime state (state/web-access.json).
+// OFF (default) is a structural boundary -- the turn denies WebSearch/WebFetch, so the agent cannot reach the web.
+let WEB_ON=false;
+function renderWeb(){const b=document.getElementById('webToggle');if(!b)return;b.textContent='web: '+(WEB_ON?'ON':'OFF');b.style.color=WEB_ON?'var(--accent)':'#aaa';b.title='Web research is '+(WEB_ON?'ON - the agent can search/fetch the web':'OFF - structural boundary: the agent cannot reach the web')+'. Click to toggle.';}
+fetch('/web-access').then(r=>r.json()).then(d=>{if(d&&d.ok){WEB_ON=!!d.enabled;}renderWeb();}).catch(()=>{renderWeb();});
+async function toggleWeb(){const next=!WEB_ON;try{const r=await(await fetch('/web-access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:next})})).json();if(r&&r.ok){WEB_ON=!!r.enabled;renderWeb();add(r.message||('Web research '+(WEB_ON?'ENABLED':'DISABLED')),'sys');}else{add('Web toggle failed: '+((r&&r.error)||'unknown'),'err');}}catch(e){add('Web toggle failed: '+e,'err');}}
 
 let ws, streaming=false, current=null;
 function connect(){

@@ -17,6 +17,7 @@ services:
       NODE_PATH: /app/webchat/node_modules   # scripts/ modules (model-routing.js) resolve js-yaml from webchat deps
       HOME: /home/castor         # claude CLI config dir
       GATEWAY_CONFIG_PATH: /app/infra/docker/litellm/openrouter.yaml
+      ANTHROPIC_SMALL_FAST_MODEL: claude-haiku-4.5   # gateway alias name; unpinned, the CLI sends its dated default and 404s the WebSearch aux-model call
     ports:
       - "${CASTOR_PUBLISH_ADDR:-127.0.0.1}:${CASTOR_PUBLISH_PORT:-8443}:8443"
     volumes:                     # image = code; state = volumes (literal split)
