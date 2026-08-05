@@ -24,6 +24,7 @@ services:
       - castor-knowledge:/app/knowledge
       - castor-logs:/app/logs
       - castor-inbox:/app/inbox
+      - castor-claude:/home/castor/.claude   # Claude Code session store -> multi-turn memory (persist across recreate)
       # LiteLLM config bind-mounted read-write so `model-routing.js set`
       # regenerates it in place (persists on the host; gateway reads it).
       - ./litellm:/app/infra/docker/litellm
@@ -48,3 +49,4 @@ volumes:
   castor-knowledge:
   castor-logs:
   castor-inbox:
+  castor-claude:

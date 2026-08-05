@@ -80,7 +80,8 @@ COPY run_e2e.sh clean_demo.sh /app/
 RUN mkdir -p /app/state /app/knowledge /app/logs /app/inbox/drop \
       /app/inbox/archive /app/inbox/quarantine /app/state/pipeline \
       /app/state/draft-queue /app/state/weekly-reports /app/knowledge/people \
-    && chown -R castor:castor /app
+      /home/castor/.claude \
+    && chown -R castor:castor /app /home/castor/.claude
 
 USER castor
 ENV NODE_ENV=production PYTHONUNBUFFERED=1 AGENT_ROOT=/app

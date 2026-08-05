@@ -18,6 +18,7 @@ try { require('dotenv').config(); } catch { /* env-first; no .env needed */ }
 const express = require('express');
 const session = require('express-session');
 const auth = require('../scripts/auth.js');
+const chatSession = require('../scripts/chat-session.js');
 const path = require('path');
 const http = require('http');
 const readline = require('readline');
@@ -103,6 +104,12 @@ function readAccent() {
   return ACCENT_DEFAULT;
 }
 app.get('/color', requireAuth, (req, res) => res.json({ ok: true, accent: readAccent(), palette: PALETTE }));
+// New conversation: rotate the session so the next turn starts fresh (agent forgets the current chat).
+app.post('/session/reset', requireAuth, (req, res) => {
+  try { chatSession.clearSessionId(path.join(AGENT_ROOT, 'state')); res.json({ ok: true, message: 'New conversation started.' }); }
+  catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 app.post('/color', requireAuth, (req, res) => {
   const v = String((req.body && req.body.value) || '').trim().toLowerCase();
   const hex = PALETTE[v] || (/^#[0-9a-f]{6}$/.test(v) ? v : null);
@@ -196,31 +203,29 @@ wss.on('connection', (ws) => {
       writeCompliance('capability-status', 'node', ['scripts/setup-wizard.js', '--status'], 30000);
     }
 
-    const child = spawn('claude', ['-p', prompt, '--model', model, '--output-format', 'stream-json', '--verbose'],
-      { cwd: AGENT_ROOT, env: process.env });
-
-    const rl = readline.createInterface({ input: child.stdout });
-    let finalText = '', errText = '';
-    rl.on('line', (line) => {
-      if (!line.trim()) return;
-      let ev; try { ev = JSON.parse(line); } catch { return; }
-      if (ev.type === 'system' && ev.subtype === 'init') {
-        ws.send(JSON.stringify({ type: 'step', text: `Session started (${model})` }));
-      } else if (ev.type === 'assistant' && ev.message && Array.isArray(ev.message.content)) {
-        for (const block of ev.message.content) {
-          if (block.type === 'text' && block.text) { finalText += block.text; ws.send(JSON.stringify({ type: 'token', text: block.text })); }
-          else if (block.type === 'tool_use') { ws.send(JSON.stringify({ type: 'step', text: 'Using: ' + (block.name || 'tool') })); }
-        }
-      } else if (ev.type === 'result' && ev.is_error) { errText = ev.result || 'Model reported an error'; }
-    });
-    child.stderr.on('data', (d) => { errText += d.toString(); });
-    child.on('close', (code) => {
-      if (code !== 0 && !finalText) ws.send(JSON.stringify({ type: 'error', text: (errText || 'Model call failed').trim().slice(0, 500) }));
-      ws.send(JSON.stringify({ type: 'done' }));
-    });
+    let finalText = '', errText = '', done = false;
+    const finish = () => { if (done) return; done = true; ws.send(JSON.stringify({ type: 'done' })); };
+    const child = chatSession.runChatTurn(
+      { prompt, model, cwd: AGENT_ROOT, stateDir: path.join(AGENT_ROOT, 'state'), env: process.env },
+      (ev) => {
+        if (ev.type === 'system' && ev.subtype === 'init') {
+          ws.send(JSON.stringify({ type: 'step', text: `Session ready (${model}) — conversation memory on` }));
+        } else if (ev.type === 'assistant' && ev.message && Array.isArray(ev.message.content)) {
+          for (const block of ev.message.content) {
+            if (block.type === 'text' && block.text) { finalText += block.text; ws.send(JSON.stringify({ type: 'token', text: block.text })); }
+            else if (block.type === 'tool_use') { ws.send(JSON.stringify({ type: 'step', text: 'Using: ' + (block.name || 'tool') })); }
+          }
+        } else if (ev.type === 'result' && ev.is_error) { errText = ev.result || 'Model reported an error'; }
+      },
+      (code, stderr) => {
+        if (stderr) errText += stderr;
+        if (code !== 0 && !finalText) ws.send(JSON.stringify({ type: 'error', text: (errText || 'Model call failed').trim().slice(0, 500) }));
+        finish();
+      }
+    );
     child.on('error', (e) => {
       ws.send(JSON.stringify({ type: 'error', text: 'Failed to start claude: ' + e.message }));
-      ws.send(JSON.stringify({ type: 'done' }));
+      finish();
     });
   });
 });
