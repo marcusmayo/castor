@@ -35,6 +35,7 @@ button.send{background:var(--accent);border:0;border-radius:8px;color:var(--acce
   <span class="brand">{{AGENT_NAME}}</span>
   <span class="modelbar" id="modelbar">model: …</span>
   <span style="display:flex;align-items:center;gap:10px">
+    <button id="newConv" onclick="newConversation()" title="Start a fresh conversation (shared with Aegis - both route sessions reset)" style="background:#1e1e1e;border:1px solid #2e2e2e;border-radius:6px;color:#aaa;padding:6px 12px;cursor:pointer;font-size:13px;margin-right:8px">↻ new</button>
     <button id="webToggle" onclick="toggleWeb()" title="Web research access" style="background:#1e1e1e;border:1px solid #2e2e2e;border-radius:6px;color:#aaa;padding:6px 12px;cursor:pointer;font-size:13px">web: …</button>
     <span class="swatch" id="accentSwatch" onclick="toggleSwatches()" title="accent color (click to change)"></span>
     <button class="logout" onclick="location.href='/logout'">Log out</button>
