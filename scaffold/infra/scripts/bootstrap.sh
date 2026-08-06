@@ -100,6 +100,17 @@ OPENROUTER_API_KEY="$(kv_get model-api-key)"
 VISION_API_KEY="$(kv_get vision-api-key)"
 log "secrets fetched (model-api-key, vision-api-key)"
 
+# Optional: a real Anthropic key (vault secret 'anthropic-api-key') enables direct
+# web_search turns (chat-session.js WEB_DIRECT_MODEL/WEB_DIRECT_KEY path). Absent ->
+# web research stays gateway-only best-effort. kv_get fails on a missing secret; the
+# || true makes this fetch optional without weakening the required ones above.
+ANTHROPIC_DIRECT_KEY="$(kv_get anthropic-api-key 2>/dev/null || true)"
+case "$ANTHROPIC_DIRECT_KEY" in
+  sk-ant-*) log "anthropic-api-key present -> WEB_DIRECT_KEY will be written (web-direct enabled)" ;;
+  "")       log "anthropic-api-key not in vault -> web-direct disabled (gateway-only)" ;;
+  *)        die "anthropic-api-key in $KEY_VAULT_NAME is not an Anthropic key (expected sk-ant- prefix)" ;;
+esac
+
 # --- 3a. key-shape guard (structural: refuse to stand up on a placeholder) ---
 # The gateway is keyless and injects OPENROUTER_API_KEY per call as the ONLY
 # upstream auth. A placeholder or wrong secret in the vault reaches OpenRouter as
@@ -143,6 +154,7 @@ ANTHROPIC_BASE_URL=http://gateway:4000
 # gateway is keyless and injects OPENROUTER_API_KEY per call, so this value is
 # inert upstream: a fixed placeholder satisfies the CLI login gate and is safe.
 ANTHROPIC_API_KEY=sk-ant-placeholder-gateway-routed
+${ANTHROPIC_DIRECT_KEY:+WEB_DIRECT_KEY=${ANTHROPIC_DIRECT_KEY}}
 EOF
 umask 022
 log "wrote $ENV_FILE (0600)"
