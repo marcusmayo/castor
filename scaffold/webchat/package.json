@@ -1,2 +1,2 @@
 { "name":"castor-webchat","version":"1.0.0","private":true,
-  "dependencies":{"express":"^4.19.2","express-session":"^1.18.0","speakeasy":"^2.0.0","ws":"^8.17.0","js-yaml":"^4.1.0"} }
+  "dependencies":{"express":"^4.19.2","express-session":"^1.18.0","speakeasy":"^2.0.0","ws":"^8.17.0","js-yaml":"^5.2.2"} }
