@@ -1,0 +1,16 @@
+# Castor skill/pipeline registry -- VALUES only. The invocation MECHANISM (auth, spawn,
+# timeout, error shape, record-to-state) is fleet-core scripts/skills.js. record: persists
+# each result to state/compliance/<record>.json for the /compliance-report skill to read.
+skills:
+  - route: /run-audit-verify
+    bin: node
+    args: [scripts/audit-log.js, verify]
+    timeout: 30000
+    record: audit-verify
+    category: Governance
+  - route: /run-capability-status
+    bin: node
+    args: [scripts/setup-wizard.js, --status]
+    timeout: 30000
+    record: capability-status
+    category: Governance

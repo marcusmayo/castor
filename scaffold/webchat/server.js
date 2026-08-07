@@ -20,6 +20,7 @@ const session = require('express-session');
 const auth = require('../scripts/auth.js');
 const chatSession = require('../scripts/chat-session.js');
 const chatOps = require('../scripts/webchat-ops.js');
+const skillsCore = require('../scripts/skills.js');
 
 const path = require('path');
 const http = require('http');
@@ -168,8 +169,8 @@ wss.on('connection', (ws) => {
     // out of the execution path; the skill only aggregates.
     const _rcmd = prompt.trim();
     if (_rcmd === '/compliance-report' || _rcmd.startsWith('/compliance-report ')) {
-      writeCompliance('audit-verify', 'node', ['scripts/audit-log.js', 'verify'], 30000);
-      writeCompliance('capability-status', 'node', ['scripts/setup-wizard.js', '--status'], 30000);
+      skillsCore.runSkillSpawn({ bin: 'node', args: ['scripts/audit-log.js', 'verify'], timeout: 30000, cwd: AGENT_ROOT, record: 'audit-verify' });
+      skillsCore.runSkillSpawn({ bin: 'node', args: ['scripts/setup-wizard.js', '--status'], timeout: 30000, cwd: AGENT_ROOT, record: 'capability-status' });
     }
 
     let finalText = '', errText = '', done = false;
@@ -199,38 +200,9 @@ wss.on('connection', (ws) => {
   });
 });
 
-// Deterministic governance evidence writer (module-level; hoisted, used by the
-// /compliance-report WS pre-step above and the two routes below). Runs a
-// read-only script via execFileSync and persists {ok, output, ranAt} to
-// state/compliance/<name>.json. Never throws: a broken audit chain (audit-log
-// exits 1) is captured as ok:false with the real output, not a route failure.
-function writeCompliance(name, bin, args, timeoutMs) {
-  const dir = path.join(AGENT_ROOT, 'state', 'compliance');
-  let rec;
-  try {
-    const out = execFileSync(bin, args, { cwd: AGENT_ROOT, encoding: 'utf8', timeout: timeoutMs });
-    rec = { ok: true, output: out, ranAt: new Date().toISOString() };
-  } catch (e) {
-    rec = { ok: false, output: (e.stdout || '') + (e.stderr || '') + String(e), ranAt: new Date().toISOString() };
-  }
-  try {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, name + '.json'), JSON.stringify(rec, null, 2));
-  } catch (e) {
-    rec.persistError = String(e);
-  }
-  return rec;
-}
-
-// Governance: refresh + return the audit-chain verification (scripts/audit-log.js).
-app.get('/run-audit-verify', requireAuth, (req, res) => {
-  res.json(writeCompliance('audit-verify', 'node', ['scripts/audit-log.js', 'verify'], 30000));
-});
-
-// Governance: refresh + return capability status (scripts/setup-wizard.js --status).
-app.get('/run-capability-status', requireAuth, (req, res) => {
-  res.json(writeCompliance('capability-status', 'node', ['scripts/setup-wizard.js', '--status'], 30000));
-});
+// Skill routes: mechanism in fleet-core scripts/skills.js, values in system/skills.yaml
+// (both record: entries persist to state/compliance/ for the /compliance-report skill).
+skillsCore.mountSkills(app, { requireAuth, cwd: AGENT_ROOT });
 
 const PORT = parseInt(process.env.CASTOR_PORT || '8443', 10);
 const HOST = process.env.CASTOR_BIND || '127.0.0.1';
