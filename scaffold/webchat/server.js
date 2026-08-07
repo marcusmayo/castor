@@ -168,13 +168,14 @@ wss.on('connection', (ws) => {
     // execFileSync) before the skill reads state/compliance/*.json. Keeps the LLM
     // out of the execution path; the skill only aggregates.
     const _rcmd = prompt.trim();
-    if (_rcmd === '/compliance-report' || _rcmd.startsWith('/compliance-report ')) {
-      skillsCore.refreshRecords(AGENT_ROOT);  // every record: entry = the full compliance evidence set
-    }
+    const _needsEvidence = _rcmd === '/compliance-report' || _rcmd.startsWith('/compliance-report ');
 
     let finalText = '', errText = '', done = false;
     const finish = () => { if (done) return; done = true; ws.send(JSON.stringify({ type: 'done' })); };
-    const child = chatSession.runChatTurn(
+    let child = null;
+    // Evidence refresh runs ASYNC (parallel execFile) so this server stays free to
+    // serve the edge-auth writer's own 403 probe; the turn starts once evidence lands.
+    const _startTurn = () => { child = chatSession.runChatTurn(
       { prompt, model, cwd: AGENT_ROOT, stateDir: path.join(AGENT_ROOT, 'state'), env: process.env },
       (ev) => {
         if (ev.type === 'system' && ev.subtype === 'init') {
@@ -196,6 +197,8 @@ wss.on('connection', (ws) => {
       ws.send(JSON.stringify({ type: 'error', text: 'Failed to start claude: ' + e.message }));
       finish();
     });
+    };
+    if (_needsEvidence) { skillsCore.refreshRecordsAsync(AGENT_ROOT, _startTurn); } else { _startTurn(); }
   });
 });
 
