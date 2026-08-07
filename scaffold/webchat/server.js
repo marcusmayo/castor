@@ -169,8 +169,7 @@ wss.on('connection', (ws) => {
     // out of the execution path; the skill only aggregates.
     const _rcmd = prompt.trim();
     if (_rcmd === '/compliance-report' || _rcmd.startsWith('/compliance-report ')) {
-      skillsCore.runSkillSpawn({ bin: 'node', args: ['scripts/audit-log.js', 'verify'], timeout: 30000, cwd: AGENT_ROOT, record: 'audit-verify' });
-      skillsCore.runSkillSpawn({ bin: 'node', args: ['scripts/setup-wizard.js', '--status'], timeout: 30000, cwd: AGENT_ROOT, record: 'capability-status' });
+      skillsCore.refreshRecords(AGENT_ROOT);  // every record: entry = the full compliance evidence set
     }
 
     let finalText = '', errText = '', done = false;
