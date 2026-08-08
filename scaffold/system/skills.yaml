@@ -2,6 +2,11 @@
 # timeout, error shape, record-to-state) is fleet-core scripts/skills.js. record: persists
 # each result to state/compliance/<record>.json for the /compliance-report skill to read.
 skills:
+  - route: /queue
+    bin: node
+    args: [scripts/queue.js]
+    timeout: 15000
+    category: Intake
   - route: /run-audit-verify
     bin: node
     args: [scripts/audit-log.js, verify]
