@@ -21,6 +21,7 @@ const auth = require('../scripts/auth.js');
 const chatSession = require('../scripts/chat-session.js');
 const chatOps = require('../scripts/webchat-ops.js');
 const skillsCore = require('../scripts/skills.js');
+const queueCore = require('../scripts/queue.js');
 
 const path = require('path');
 const http = require('http');
@@ -95,8 +96,13 @@ const pending = require('./pending');
 
 // Pending panel: intake items grouped by state.
 app.get('/pending', requireAuth, (req, res) => {
-  try { res.json({ ok: true, groups: pending.listPending(AGENT_ROOT) }); }
-  catch (e) { res.json({ ok: false, error: e.message }); }
+  try {
+    const groups = pending.listPending(AGENT_ROOT);
+    // Queue visibility (fleet-core queue.js): count inbox/drop as awaiting-intake so the
+    // pill moves the moment PROCESS delivers, before the intake timer sweeps it.
+    groups.awaitingIntake = queueCore.listQueue(AGENT_ROOT).map((i) => ({ file: i.name }));
+    res.json({ ok: true, groups });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 // Serve a vision-pending image for the attestation thumbnail (authed only).
 app.get('/pending/image/:name', requireAuth, (req, res) => {

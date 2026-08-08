@@ -60,7 +60,7 @@ button.send{background:var(--accent);border:0;border-radius:8px;color:var(--acce
 <div id="pending" style="display:none;padding:8px 16px;border-bottom:1px solid #1a1a1a;font-size:13px"></div>
 <div id="log"></div>
 <footer>
-  <textarea id="input" rows="1" placeholder="Ask Castor… (e.g. /morning, or paste a note for /triage)"></textarea>
+  <textarea id="input" rows="1" placeholder="Ask {{AGENT_NAME}}… (e.g. /morning, or paste a note for /triage)"></textarea>
   <button class="send" onclick="send()">Send</button>
 </footer>
 <script src="/core/webchat-controls.js"></script>
@@ -133,7 +133,7 @@ async function loadPending(){
     const d=await (await fetch('/pending')).json();
     if(!d.ok){el.textContent='pending unavailable';return;}
     const g=d.groups;
-    const total=g.ready.length+g.flagged.length+g.unscanned.length+g.visionPending.length;
+    const total=g.ready.length+g.flagged.length+g.unscanned.length+g.visionPending.length+((g.awaitingIntake||[]).length);
     document.getElementById('pcount').textContent=total?('('+total+')'):'(0)';
     let h='';
     function group(title,items,extra){
@@ -142,6 +142,7 @@ async function loadPending(){
       for(const it of items){ s+='<div style="margin:3px 0 3px 8px;font-family:monospace">'+it.file+(extra?extra(it):'')+'</div>'; }
       return s+'</div>';
     }
+    h+=group('Awaiting intake', g.awaitingIntake||[], ()=>' <span style="color:#888;font-size:11px">&mdash; intake sweeps every 2 min</span>');
     h+=group('Vision-pending', g.visionPending, it=>' <button onclick="interpret(\''+it.file+'\',\''+(it.sha256||'')+'\')" style="background:var(--accent);border:0;border-radius:4px;color:var(--accent-text);font-size:11px;padding:1px 8px;cursor:pointer">Interpret</button>');
     h+=group('Ready', g.ready, ()=>' <span style="color:#666;font-size:11px">— run /triage</span>');
     h+=group('Flagged', g.flagged, ()=>' <span style="color:#e0a86c;font-size:11px">⚑ flagged</span>');
