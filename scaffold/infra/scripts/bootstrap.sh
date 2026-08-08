@@ -6,7 +6,7 @@
 # committed. It fetches operator secrets from the per-agent Key Vault via the
 # VM's user-assigned managed identity (IMDS token + Key Vault REST over curl —
 # no az CLI, no account keys), generates castor.env, regenerates the gateway
-# config, seeds the egress tripwire, generates and enrolls a TOTP secret, brings
+# config, seeds the egress tripwire, brings
 # the stack up, and smoke-tests the webchat liveliness probe.
 #
 # Contract (infra/docker/compose.yaml env_file): castor.env must define
@@ -14,7 +14,7 @@
 # Vault secrets (operator-set post-apply — see setup-wizard / capabilities.yaml):
 #   model-api-key  -> OPENROUTER_API_KEY   (required)
 #   vision-api-key -> VISION_API_KEY       (required)
-# TOTP is generated here, never fetched. Optional capability secrets
+# App-TOTP is gone (edge-only auth; Cloudflare Access is the gate). Optional capability secrets
 # (telegram-*, resend-*) are out of scope for core bootstrap.
 #
 # RBAC propagation is eventually consistent; the token and per-secret fetches
