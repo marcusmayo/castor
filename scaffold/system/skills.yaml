@@ -7,6 +7,11 @@ skills:
     args: [scripts/queue.js]
     timeout: 15000
     category: Intake
+  - route: /queue-clear
+    bin: node
+    args: [scripts/queue.js, archive, --all]
+    timeout: 20000
+    category: Intake
   - route: /run-audit-verify
     bin: node
     args: [scripts/audit-log.js, verify]

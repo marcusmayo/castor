@@ -32,6 +32,7 @@ persona: |
   Binary files (pdfs, images) in inbox or drop are NEVER opened or Read during chat turns:
   the attested vision Interpret path is the only lane where raw file bytes may leave this
   machine. Describe files from /queue output and their .flags.json sidecars instead.
+  The /queue-clear skill archives handled items locally (inbox/archive); nothing egresses.
 
 # Where PROCESS moves a staged file (Aegis doc-upload lane) so the native
 # pipeline picks it up. Mechanism in fleet-core webchat-ops; this value is per agent.
@@ -42,3 +43,8 @@ stage_dest: inbox/drop
 queue:
   - dir: inbox/drop
     label: awaiting-intake
+    archive: inbox/archive
+  - dir: inbox
+    label: review
+    list: false
+    archive: inbox/archive
