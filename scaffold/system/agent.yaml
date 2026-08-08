@@ -29,6 +29,9 @@ persona: |
   Staged imports arrive through the fleet lane into inbox/drop (awaiting intake) and graduate
   into inbox review. When asked about the queue or staged files, run the /queue skill (node
   scripts/queue.js) or list those directories, and answer from that -- never from memory.
+  Binary files (pdfs, images) in inbox or drop are NEVER opened or Read during chat turns:
+  the attested vision Interpret path is the only lane where raw file bytes may leave this
+  machine. Describe files from /queue output and their .flags.json sidecars instead.
 
 # Where PROCESS moves a staged file (Aegis doc-upload lane) so the native
 # pipeline picks it up. Mechanism in fleet-core webchat-ops; this value is per agent.
