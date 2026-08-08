@@ -4,11 +4,11 @@
 # containers -- restarted after a restore
 paths: []
 volumes:
-  - castor-state
-  - castor-knowledge
-  - castor-logs
-  - castor-inbox
-  - castor-claude
+  - castor_castor-state
+  - castor_castor-knowledge
+  - castor_castor-logs
+  - castor_castor-inbox
+  - castor_castor-claude
 containers:
-  - castor-webchat
-  - castor-gateway
+  - castor_castor-webchat
+  - castor_castor-gateway
