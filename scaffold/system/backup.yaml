@@ -10,5 +10,5 @@ volumes:
   - castor_castor-inbox
   - castor_castor-claude
 containers:
-  - castor_castor-webchat
-  - castor_castor-gateway
+  - castor-webchat
+  - castor-gateway
