@@ -48,3 +48,8 @@ queue:
     label: review
     list: false
     archive: inbox/archive
+
+# Readable names for verified Cloudflare identities (fleet-core skills.js).
+# The raw client-id stays in the record as the verified fact; this is only a label.
+actor_labels:
+  "ddf7b2b9272d212b93a13b3159218111.access": aegis-control-plane
