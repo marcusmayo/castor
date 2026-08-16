@@ -52,4 +52,5 @@ queue:
 # Readable names for verified Cloudflare identities (fleet-core skills.js).
 # The raw client-id stays in the record as the verified fact; this is only a label.
 actor_labels:
-  "ddf7b2b9272d212b93a13b3159218111.access": aegis-control-plane
+  "ddf7b2b9272d212b93a13b3159218111.access": aegis-workstation
+  "cb188b6d07b048ae580596eb1e6e6107.access": aegis-vm
