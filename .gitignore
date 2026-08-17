@@ -19,3 +19,5 @@ scaffold/system/agent.local.yaml
 
 # Generated gateway config (bootstrap writes it from system/model-routing.yaml; openrouter.yaml is the committed baseline)
 scaffold/infra/docker/litellm/openrouter.generated.yaml
+scaffold/infra/docker/litellm/openrouter.generated.yaml.tmp
+scaffold/infra/docker/litellm/openrouter.generated.yaml.err
