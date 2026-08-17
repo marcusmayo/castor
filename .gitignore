@@ -13,3 +13,6 @@ scaffold/node_modules/
 scaffold/state/capabilities.json
 scaffold/webchat/node_modules/
 *.bak
+
+# Deploy-time name overlay written by cloud-init at provision (fleet-core auth.readAgentName reads it first)
+scaffold/system/agent.local.yaml
