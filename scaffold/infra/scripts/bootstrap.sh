@@ -159,8 +159,10 @@ log "wrote $ENV_FILE (0600)"
 GEN_ERR="${GATEWAY_CFG}.err"
 if docker compose -f "$COMPOSE" run --rm --no-deps -T webchat \
      node scripts/model-routing.js gateway-config > "${GATEWAY_CFG}.tmp" 2>"$GEN_ERR" && [ -s "${GATEWAY_CFG}.tmp" ]; then
-  mv "${GATEWAY_CFG}.tmp" "$GATEWAY_CFG"; rm -f "$GEN_ERR"
-  log "gateway config generated -> $GATEWAY_CFG ($(grep -c 'model_name' "$GATEWAY_CFG") models)"
+  rm -f "$GEN_ERR"
+  # write only when the table changed, so the file's mtime means "the table changed"
+  if [ -s "$GATEWAY_CFG" ] && cmp -s "${GATEWAY_CFG}.tmp" "$GATEWAY_CFG"; then rm -f "${GATEWAY_CFG}.tmp"; log "gateway config unchanged ($(grep -c 'model_name' "$GATEWAY_CFG") models)"
+  else mv "${GATEWAY_CFG}.tmp" "$GATEWAY_CFG"; log "gateway config generated -> $GATEWAY_CFG ($(grep -c 'model_name' "$GATEWAY_CFG") models)"; fi
 else
   rm -f "${GATEWAY_CFG}.tmp"
   log "WARNING: gateway-config generation FAILED:"; tail -n 4 "$GEN_ERR" 2>/dev/null | sed 's/^/    /'; rm -f "$GEN_ERR"
@@ -181,6 +183,17 @@ fi
 # --- 8. bring the stack up (webchat + gateway) ---
 log "starting compose (webchat + gateway profile)"
 docker compose -f "$COMPOSE" --profile gateway up -d
+# LiteLLM reads its config once, at start, and compose up -d does not restart a container for a
+# changed bind-mounted file: a gateway older than its config is serving a table that no longer
+# exists. Restart it when it predates the file; nothing else is touched. Same rule as the other profile.
+if docker ps --format '{{.Names}}' | grep -qx castor-gateway; then
+  gw_start="$(date -d "$(docker inspect --format '{{.State.StartedAt}}' castor-gateway)" +%s 2>/dev/null || echo 0)"
+  cfg_mtime="$(stat -c %Y "$GATEWAY_CFG")"
+  if [ "$cfg_mtime" -gt "$gw_start" ]; then
+    log "gateway started before its config was written — restarting it"
+    docker compose -f "$COMPOSE" --profile gateway restart gateway
+  else log "gateway is newer than its config — no restart"; fi
+fi
 
 # --- 9. smoke test: liveliness probe (HTTP 200), never docker inspect status ---
 URL="http://127.0.0.1:${PUBLISH_PORT}/health/liveliness"
