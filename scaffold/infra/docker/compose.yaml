@@ -17,7 +17,7 @@ services:
       NODE_PATH: /app/webchat/node_modules   # scripts/ modules (model-routing.js) resolve js-yaml from webchat deps
       HOME: /home/castor         # claude CLI config dir
       CLAUDE_CONFIG_DIR: /home/castor/.claude   # relocate .claude.json INTO the persistent volume (kills the recreate-warning)
-      GATEWAY_CONFIG_PATH: /app/infra/docker/litellm/openrouter.yaml
+      GATEWAY_CONFIG_PATH: /app/infra/docker/litellm/openrouter.generated.yaml
       ANTHROPIC_SMALL_FAST_MODEL: claude-haiku-4.5   # gateway alias name; unpinned, the CLI sends its dated default and 404s the WebSearch aux-model call
       ANTHROPIC_MODEL: deepseek-v4-pro   # routine-tier default (system/model-routing.yaml); pins the CLI's MAIN model the way SMALL_FAST pins the aux -- bare `claude -p` from tools otherwise sends a dated default the gateway 400s
       WEB_DIRECT_MODEL: claude-sonnet-4-6   # web-ON turns bypass the gateway -> api.anthropic.com for REAL server-side web_search (uses castor's real ANTHROPIC_API_KEY)
@@ -41,7 +41,7 @@ services:
     image: ghcr.io/berriai/litellm@sha256:9ef6f45bc0104940571765e610c52a1d761b5ec85efcd193795281086ee61277
     container_name: castor-gateway
     env_file: [castor.env]
-    command: ["--config", "/cfg/openrouter.yaml", "--port", "4000"]
+    command: ["--config", "/cfg/openrouter.generated.yaml", "--port", "4000"]
     volumes:
       - ./litellm:/cfg:ro
     extra_hosts:

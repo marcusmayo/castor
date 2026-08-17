@@ -31,7 +31,12 @@ cd "$AGENT_ROOT"
 FLAGS="$AGENT_ROOT/.provision-flags"
 COMPOSE="$AGENT_ROOT/infra/docker/compose.yaml"
 ENV_FILE="$AGENT_ROOT/infra/docker/castor.env"
-GATEWAY_CFG="$AGENT_ROOT/infra/docker/litellm/openrouter.yaml"
+# The gateway config is GENERATED into an untracked file the gateway mounts (gitignored); the
+# committed openrouter.yaml beside it is the baseline copied in when generation fails. Writing
+# over the tracked file left the checkout dirty after every model change (the panel's model
+# switch regenerates it at runtime) and made a pull that touched it conflict on the VM.
+GATEWAY_SRC="$AGENT_ROOT/infra/docker/litellm/openrouter.yaml"
+GATEWAY_CFG="$AGENT_ROOT/infra/docker/litellm/openrouter.generated.yaml"
 NEVER_EGRESS="$AGENT_ROOT/gate/never-egress.json"
 NEVER_EGRESS_EXAMPLE="$AGENT_ROOT/gate/never-egress.example.json"
 IMAGE="castor:latest"
@@ -43,6 +48,12 @@ command -v docker  >/dev/null || die "docker not found on host"
 command -v curl    >/dev/null || die "curl not found on host"
 command -v python3 >/dev/null || die "python3 not found on host"
 docker info >/dev/null 2>&1 || die "cannot reach the docker daemon — add \$USER to the docker group (sudo usermod -aG docker \$USER; re-login) or run this with sudo"
+# Idempotent by construction, on both profiles: an existing castor.env is a resume (secrets are
+# re-fetched below and the file rewritten -- a rotation lands on any re-run); a missing image is
+# built here rather than assumed. The self-heal retry re-runs this script until the webchat is
+# healthy, and it must mean the same thing every time.
+[ -f "$ENV_FILE" ] && log "$ENV_FILE exists -- resuming (secrets re-fetched, nothing refused)"
+docker image inspect "$IMAGE" >/dev/null 2>&1 || { log "image $IMAGE missing -- building"; bash "$AGENT_ROOT/infra/scripts/build-image.sh"; }
 
 # --- 1. provision flags (written by cloud-init from vm.bicep) ---
 [ -f "$FLAGS" ] || die "missing $FLAGS — cloud-init did not complete"
@@ -145,11 +156,12 @@ log "wrote $ENV_FILE (0600)"
 if docker run --rm -w /app -e AGENT_ROOT=/app "$IMAGE" \
      node scripts/model-routing.js gateway-config > "${GATEWAY_CFG}.tmp" 2>/dev/null && [ -s "${GATEWAY_CFG}.tmp" ]; then
   mv "${GATEWAY_CFG}.tmp" "$GATEWAY_CFG"
-  log "gateway config regenerated -> $GATEWAY_CFG"
+  log "gateway config generated -> $GATEWAY_CFG"
 else
   rm -f "${GATEWAY_CFG}.tmp"
-  [ -s "$GATEWAY_CFG" ] || die "gateway-config regeneration failed and no committed openrouter.yaml is present"
-  log "WARNING: gateway-config regeneration failed — using the committed $GATEWAY_CFG"
+  [ -s "$GATEWAY_SRC" ] || die "gateway-config generation failed and no committed baseline $GATEWAY_SRC to fall back to"
+  cp "$GATEWAY_SRC" "$GATEWAY_CFG"
+  log "WARNING: gateway-config generation failed — using the committed baseline $GATEWAY_SRC -> $GATEWAY_CFG"
 fi
 
 # --- 7. seed the egress tripwire config (fails closed if absent; never clobber operator edits) ---
