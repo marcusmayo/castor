@@ -143,13 +143,17 @@ server.on('upgrade', (req, socket, head) => {
   });
 });
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+  // Who is on this socket (fleet-core rule: verified caller, asserted on-behalf-of), read once;
+  // every turn on it is recorded on this agent's chain -- what it did, for whom, never the text.
+  const who = chatSession.wsIdentity(req, AGENT_ROOT);
   ws.on('message', (data) => {
     let msg = {};
     try { msg = JSON.parse(data); } catch { msg = { prompt: String(data) }; }
     const prompt = (msg.prompt || '').toString();
     const tier = (msg.tier || 'routine').toString();
     if (!prompt.trim()) { ws.send(JSON.stringify({ type: 'error', text: 'Empty prompt.' })); return; }
+    const t0 = Date.now();
 
     // Egress boundary: a typed prompt containing a never-egress term is not sent.
     const trip = checkTripwire(prompt);
@@ -195,11 +199,13 @@ wss.on('connection', (ws) => {
       (code, stderr) => {
         if (stderr) errText += stderr;
         if (code !== 0 && !finalText) ws.send(JSON.stringify({ type: 'error', text: (errText || 'Model call failed').trim().slice(0, 500) }));
+        try { auditRecord(chatSession.turnRecord(who, { model, promptBytes: Buffer.byteLength(prompt, 'utf8'), replyBytes: Buffer.byteLength(finalText, 'utf8'), durationMs: Date.now() - t0, rc: code, error: code !== 0 ? errText : '' })); } catch (e) { /* the chain never blocks a reply */ }
         finish();
       }
     );
     child.on('error', (e) => {
       ws.send(JSON.stringify({ type: 'error', text: 'Failed to start claude: ' + e.message }));
+      try { auditRecord(chatSession.turnRecord(who, { model, promptBytes: Buffer.byteLength(prompt, 'utf8'), replyBytes: 0, durationMs: Date.now() - t0, rc: -1, error: 'spawn: ' + e.message })); } catch (e2) { /* ditto */ }
       finish();
     });
     };
