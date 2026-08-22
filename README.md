@@ -7,12 +7,35 @@ empty by design so a fresh deploy stands up clean and generic. It carries no
 data and no behavioral content of the original - only the shape.
 
 The agent code lives in `scaffold/`. It is deployed as a fleet profile by
-**agent-fleet-iac** (Bicep + user-assigned managed identity):
-https://github.com/marcusmayo/agent-fleet-iac
+**fleet** (Bicep + user-assigned managed identity):
+https://github.com/marcusmayo/fleet
 
 A self-contained **Terraform** deployment of the same twin (one `apply`, three
 providers, pushes this scaffold into its own repo) is preserved separately at:
 https://github.com/marcusmayo/castor-tf-iac
+
+## Run it locally
+
+Production auth is edge-only (Cloudflare Access); the app 403s anything that
+didn't come through it. For a laptop there is an explicit local mode:
+
+```bash
+git clone https://github.com/marcusmayo/castor.git
+cd castor/scaffold
+bash infra/scripts/build-image.sh          # build FAILS if vendored core drifts
+cd infra/docker
+cp castor.env.example castor.env
+#   set  ANTHROPIC_API_KEY=sk-ant-...      (or an sk-or- key with the gateway profile)
+#   uncomment  AUTH_MODE=local             (local development ONLY)
+docker compose up -d webchat
+# open http://127.0.0.1:8443
+```
+
+`AUTH_MODE=local` disables edge authentication entirely: default-off, only the
+literal word activates it, read at request time so an image can never bake it
+on, and every page carries a permanent red banner. Never expose that port to a
+network. Unset, behaviour is byte-identical to production — a bare request
+gets 403 — and a test pins that.
 
 ## Architecture
 
@@ -44,7 +67,7 @@ scaffold/
 ## Deploy
 
 Castor deploys through the fleet, not from this repo directly. See
-**agent-fleet-iac** for the one-command path: `deploy.sh` provisions the VM and
+**fleet** for the one-command path: `deploy.sh` provisions the VM and
 per-agent Key Vault, `set-secrets.sh` sets the operator secrets with shape
 validation, and `bootstrap.sh` fetches them via managed identity and brings the
 stack up. Run the acceptance oracle on a fresh agent to prove the pipeline:

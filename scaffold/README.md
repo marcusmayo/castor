@@ -1,12 +1,12 @@
 # Scaffold — Personal AI Operations Platform (Structural Twin)
 
 This repository is the deployed filesystem for a structural twin of a
-first-generation personal AI operations platform. It is cloned onto the VM at first boot by agent-fleet-iac (the fleet
-deployment).
+first-generation personal AI operations platform. It is cloned onto the VM at first boot by the fleet
+deployment (github.com/marcusmayo/fleet).
 
 The scripts and skills are implemented and tested; the state and knowledge
 directories are empty by design, so a fresh deploy stands up clean and
-generic. See the agent-fleet-iac README for the deployment path, and the standalone
+generic. See the fleet README for the deployment path, and the standalone
 Terraform twin (github.com/marcusmayo/castor-tf-iac) for the single-apply variant.
 
 Layout mirrors the original architecture:
