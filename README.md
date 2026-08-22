@@ -19,17 +19,23 @@ https://github.com/marcusmayo/castor-tf-iac
 Production auth is edge-only (Cloudflare Access); the app 403s anything that
 didn't come through it. For a laptop there is an explicit local mode:
 
+Prerequisite: Docker Desktop running (Windows/macOS) or the docker engine
+(Linux). The commands below are identical on all three — PowerShell included.
+
 ```bash
 git clone https://github.com/marcusmayo/castor.git
-cd castor/scaffold
-bash infra/scripts/build-image.sh          # build FAILS if vendored core drifts
-cd infra/docker
+cd castor/scaffold/infra/docker
 cp castor.env.example castor.env
 #   set  ANTHROPIC_API_KEY=sk-ant-...      (or an sk-or- key with the gateway profile)
 #   uncomment  AUTH_MODE=local             (local development ONLY)
-docker compose up -d webchat
+docker compose --env-file ../versions.lock up -d --build webchat
 # open http://127.0.0.1:8443
 ```
+
+The `--env-file` feeds the repo's pinned versions into the image build — the
+build still fails if the vendored core drifts from its manifest. (On the
+fleet's own VMs the image is built by `infra/scripts/build-image.sh` instead;
+this path is for laptops.)
 
 `AUTH_MODE=local` disables edge authentication entirely: default-off, only the
 literal word activates it, read at request time so an image can never bake it

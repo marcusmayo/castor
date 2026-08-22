@@ -8,6 +8,20 @@ name: castor
 services:
   webchat:
     image: castor:latest
+    # compose can BUILD the image itself -- the cross-platform stranger path (no bash, no sudo):
+    #     docker compose --env-file ../versions.lock up -d --build webchat
+    # versions.lock stays the single source; the fleet's VM bootstrap still builds via
+    # build-image.sh first, so plain `compose up` there never touches this block.
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+      args:
+        BASE_IMAGE: ${UBUNTU_BASE_IMAGE:-}@${UBUNTU_BASE_DIGEST:-}
+        NODE_VERSION: ${NODE_VERSION:-}
+        NODE_SHA256_X64: ${NODE_SHA256_LINUX_X64:-}
+        NODE_SHA256_ARM64: ${NODE_SHA256_LINUX_ARM64:-}
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-}
+        TARGETARCH: ${TARGETARCH:-amd64}
     container_name: castor-webchat
     env_file: [castor.env]
     environment:
