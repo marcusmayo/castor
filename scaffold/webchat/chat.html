@@ -95,7 +95,7 @@ button.send{background:var(--accent);border:0;border-radius:8px;color:var(--acce
      raise the colours we own, and put a text-shadow on the whole band. The shadow is inherited
      and an inline `color` cannot cancel it, so the inline-styled counters and group headings in
      castor's pending list get carried too -- no !important, no specificity fight. */
-  body.hasbg header,body.hasbg .cheattoggle,body.hasbg #swatches,body.hasbg footer{text-shadow:0 1px 2px rgba(0,0,0,.78)}
+  body.hasbg header,body.hasbg .cheattoggle,body.hasbg #swatches,body.hasbg #pending,body.hasbg footer{text-shadow:0 1px 2px rgba(0,0,0,.78)}
   body.hasbg .glabel{color:#c0c0c0}
   body.hasbg .modelbar{color:#c8c8c8}
   body.hasbg .cheatlist span,body.hasbg .cheatgroup span{color:#cfcfcf}
@@ -151,7 +151,7 @@ button.send{background:var(--accent);border:0;border-radius:8px;color:var(--acce
   <div class="cheatgroup"><span class="glabel">Appearance</span>
     <code class="cheatchip" onclick="ins('/color ')" title="set the UI accent color (per agent)">/color</code></div>
 </div>
-<div class="cheattoggle" onclick="togglePending()"><span id="pcaret">▸</span> Pending <span id="pcount" style="color:#666;font-size:12px"></span></div>
+<div class="cheattoggle" onclick="togglePending()"><span id="pcaret">▸</span> Pending <span id="pcount" style="color:#a6a6a6;font-size:12px"></span></div>
 <div id="pending" style="display:none;padding:8px 16px;border-bottom:1px solid #1a1a1a;font-size:13px"></div>
 <div id="log"></div>
 <footer>
@@ -233,16 +233,16 @@ async function loadPending(){
     let h='';
     function group(title,items,extra){
       if(!items.length)return '';
-      let s='<div style="margin:6px 0"><span style="color:#888;text-transform:uppercase;font-size:11px">'+title+' ('+items.length+')</span>';
+      let s='<div style="margin:6px 0"><span style="color:#c0c0c0;text-transform:uppercase;font-size:11px">'+title+' ('+items.length+')</span>';
       for(const it of items){ s+='<div style="margin:3px 0 3px 8px;font-family:monospace">'+it.file+(extra?extra(it):'')+'</div>'; }
       return s+'</div>';
     }
-    h+=group('Awaiting intake', g.awaitingIntake||[], ()=>' <span style="color:#888;font-size:11px">&mdash; intake sweeps every 2 min</span>');
+    h+=group('Awaiting intake', g.awaitingIntake||[], ()=>' <span style="color:#c0c0c0;font-size:11px">&mdash; intake sweeps every 2 min</span>');
     h+=group('Vision-pending', g.visionPending, it=>' <button onclick="interpret(\''+it.file+'\',\''+(it.sha256||'')+'\')" style="background:var(--accent);border:0;border-radius:4px;color:var(--accent-text);font-size:11px;padding:1px 8px;cursor:pointer">Interpret</button>');
-    h+=group('Ready', g.ready, ()=>' <span style="color:#666;font-size:11px">— run /triage</span>');
+    h+=group('Ready', g.ready, ()=>' <span style="color:#a6a6a6;font-size:11px">— run /triage</span>');
     h+=group('Flagged', g.flagged, ()=>' <span style="color:#e0a86c;font-size:11px">⚑ flagged</span>');
-    h+=group('Unscanned', g.unscanned, ()=>' <span style="color:#888;font-size:11px">not scannable as text</span>');
-    el.innerHTML=h||'<span style="color:#666">inbox empty</span>';
+    h+=group('Unscanned', g.unscanned, ()=>' <span style="color:#c0c0c0;font-size:11px">not scannable as text</span>');
+    el.innerHTML=h||'<span style="color:#a6a6a6">inbox empty</span>';
   }catch(e){el.textContent='pending unavailable';}
 }
 function togglePending(){const p=document.getElementById('pending');const open=p.style.display==='block';p.style.display=open?'none':'block';document.getElementById('pcaret').textContent=open?'▸':'▾';if(!open)loadPending();}
