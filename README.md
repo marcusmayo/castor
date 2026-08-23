@@ -123,7 +123,7 @@ scaffold/
   gate/          egress tripwire + claude -p spine (redact, audit)
   scripts/       intake, register, digest, model-routing, health, scan-tree, ...
   webchat/       auth + pending panel + interpret actions
-  System/        capabilities, model-routing.yaml, pipeline stages, voice
+  system/        capabilities, model-routing.yaml, pipeline stages, voice
   tests/         fixture tests for the intake / skill lanes
   infra/         Dockerfile, compose, bootstrap (managed-identity first-boot)
   run_e2e.sh     end-to-end acceptance oracle

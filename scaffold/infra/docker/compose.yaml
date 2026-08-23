@@ -1,6 +1,5 @@
 # Castor self-contained deployment. Requires castor.env alongside (gitignored),
 # created by infra/scripts/bootstrap.sh:
-#   TOTP_SECRET=...            # generated + enrolled by bootstrap
 #   OPENROUTER_API_KEY=...     # text skills via the LiteLLM gateway
 #   VISION_API_KEY=...         # direct Anthropic key for the interpret path
 #   ANTHROPIC_BASE_URL=http://gateway:4000   # claude -p -> gateway (OpenRouter)
