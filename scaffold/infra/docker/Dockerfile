@@ -84,6 +84,10 @@ RUN mkdir -p /app/state /app/knowledge /app/logs /app/inbox/drop \
     && chown -R castor:castor /app /home/castor/.claude
 
 USER castor
+# NODE_PATH so vendored scripts/ modules resolve the webchat deps (js-yaml, express) the same
+# way keel's image does. Compose sets it too; keel set it in both places and castor only in
+# compose, so a bare docker run of this image behaved differently from keel's.
+ENV NODE_PATH=/app/webchat/node_modules
 ENV NODE_ENV=production PYTHONUNBUFFERED=1 AGENT_ROOT=/app
 EXPOSE 8443
 # Liveness on the intake/webchat health endpoint (200 only), not docker status.
