@@ -4,20 +4,20 @@
 *_key.pub
 # Editor/OS noise
 .DS_Store
-scaffold/gate/never-egress.json
+gate/never-egress.json
 # Written on the VM by bootstrap.sh / cloud-init — real secrets, never commit
-scaffold/infra/docker/castor.env
-scaffold/.provision-flags
-scaffold/gate/node_modules/
-scaffold/node_modules/
-scaffold/state/capabilities.json
-scaffold/webchat/node_modules/
+infra/docker/castor.env
+.provision-flags
+gate/node_modules/
+node_modules/
+state/capabilities.json
+webchat/node_modules/
 *.bak
 
 # Deploy-time name overlay written by cloud-init at provision (fleet-core auth.readAgentName reads it first)
-scaffold/system/agent.local.yaml
+system/agent.local.yaml
 
 # Generated gateway config (bootstrap writes it from system/model-routing.yaml; openrouter.yaml is the committed baseline)
-scaffold/infra/docker/litellm/openrouter.generated.yaml
-scaffold/infra/docker/litellm/openrouter.generated.yaml.tmp
-scaffold/infra/docker/litellm/openrouter.generated.yaml.err
+infra/docker/litellm/openrouter.generated.yaml
+infra/docker/litellm/openrouter.generated.yaml.tmp
+infra/docker/litellm/openrouter.generated.yaml.err

@@ -8,7 +8,7 @@
 # Castor runtime image. Build via infra/scripts/build-image.sh (passes pins
 # from infra/versions.lock). Image = code, immutable; state = volumes.
 #
-# Differs from Keel: three npm install locations (scaffold root, gate, webchat),
+# Differs from Keel: three npm install locations (repo root, gate, webchat),
 # and the runtime adds poppler-utils + tesseract-ocr + gzip that Castor's
 # intake and log-rotate actually use. No Python pip deps (sunday-maintenance.py
 # is stdlib-only).
@@ -56,7 +56,7 @@ RUN cd /app/gate && npm ci --omit=dev
 COPY webchat/package.json webchat/package-lock.json /app/webchat/
 RUN cd /app/webchat && npm ci --omit=dev
 
-# Code whitelist — scaffold contents only, no state/knowledge data.
+# Code whitelist — code only, no state/knowledge data.
 COPY gate/ /app/gate/
 
 # Fleet-core drift gate (gate/): vendored gate modules must byte-match agent-fleet-iac/core/gate.

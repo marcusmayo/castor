@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the Castor image with every pin sourced from infra/versions.lock.
-# Build context is the scaffold root (this script lives at infra/scripts/).
+# Build context is the repo root (this script lives at infra/scripts/).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 set -a; source infra/versions.lock; set +a

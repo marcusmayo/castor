@@ -1,7 +1,7 @@
 # Cron schedule for Castor. NOT installed by cloud-init.
 # Activate after the scripts exist and paths are edited:
 #   crontab ~/[PREFIX]/crontab.template
-# All paths assume the scaffold is cloned to $HOME/[PREFIX].
+# All paths assume the repo is cloned to $HOME/[PREFIX]; the agent is the repo root.
 
 */5 * * * *   bash -lc 'AGENT_ROOT=$HOME/[PREFIX] node $HOME/[PREFIX]/scripts/intake.js --once'    # drop-path intake (replaces the mail poller)
 0 17 * * 1-5  bash -lc 'AGENT_ROOT=$HOME/[PREFIX] node $HOME/[PREFIX]/scripts/digest.js'           # daily digest 17:00 weekdays
@@ -10,7 +10,7 @@
 0 6 * * *     bash -lc 'cd $HOME/[PREFIX] && git add -u && git commit -m "auto: daily" || true'
 */30 * * * *  bash -lc 'cd $HOME/[PREFIX] && git add -u && git commit -m "auto: periodic" || true'
 0 3 * * 0     bash -lc 'AGENT_ROOT=$HOME/[PREFIX] python3 $HOME/[PREFIX]/scripts/sunday-maintenance.py'  # weekly hygiene + MEMORY.md refresh
-30 3 * * 0    bash -lc 'cd $HOME/[PREFIX] && npm --prefix scaffold audit || true'                  # weekly vuln audit (pairs with maintenance)
+30 3 * * 0    bash -lc 'cd $HOME/[PREFIX] && npm audit || true'                  # weekly vuln audit (pairs with maintenance)
 15 3 * * 1    bash -lc 'AGENT_ROOT=$HOME/[PREFIX] bash $HOME/[PREFIX]/scripts/pii-weekly-scan.sh'  # weekly PII sweep
 0 6 * * 0     bash -lc 'AGENT_ROOT=$HOME/[PREFIX] bash $HOME/[PREFIX]/scripts/log-rotate.sh'       # weekly log rotation
 0 2 * * *     bash -lc 'AGENT_ROOT=$HOME/[PREFIX] bash $HOME/[PREFIX]/scripts/azure-backup.sh'     # daily encrypted backup

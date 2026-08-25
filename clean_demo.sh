@@ -6,7 +6,7 @@
 # register row, and generated digests. PRESERVES secrets (castor.env), code,
 # the container, the egress config (gate/never-egress.json), the audit chain
 # (logs/audit.jsonl - provenance; a truly clean PROD agent is a fresh deploy on
-# an empty volume), and all structural scaffolding (templates, .gitkeep files).
+# an empty volume), and all structural placeholders (templates, .gitkeep files).
 # Scoped by design - never a blanket rm or git clean.
 #
 # Run INSIDE the Castor container against /app:

@@ -6,7 +6,7 @@ const ROOT = path.join(__dirname, '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'jobs-'));
 process.env.AGENT_ROOT = tmp;
 fs.copyFileSync(path.join(ROOT, 'gate', 'never-egress.example.json'), path.join(ROOT, 'gate', 'never-egress.json'));
-// mirror scaffold dirs the jobs expect
+// mirror the agent dirs the jobs expect
 for (const d of ['state','state/pipeline','state/weekly-reports','knowledge','inbox','inbox/archive','logs','gate']) fs.mkdirSync(path.join(tmp, d), { recursive: true });
 fs.copyFileSync(path.join(ROOT, 'gate', 'never-egress.json'), path.join(tmp, 'gate', 'never-egress.json'));
 // the jobs resolve modules from AGENT_ROOT/scripts — point those at our scripts

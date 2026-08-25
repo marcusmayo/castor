@@ -1,8 +1,8 @@
 {
-  "name": "castor-scaffold",
+  "name": "castor",
   "version": "1.0.0",
   "private": true,
-  "description": "Castor deployed filesystem scaffold — agent scripts, capability registry, intake lane.",
+  "description": "Castor deployed filesystem — agent scripts, capability registry, intake lane.",
   "dependencies": {
     "js-yaml": "^4.1.0",
     "xlsx": "^0.18.5",

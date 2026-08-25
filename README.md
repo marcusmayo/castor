@@ -8,12 +8,12 @@ skills are implemented and tested, with every state and knowledge directory
 empty by design so a fresh deploy stands up clean and generic. It carries no
 data and no behavioral content of the original - only the shape.
 
-The agent code lives in `scaffold/`. It is deployed as a fleet profile by
+The agent is the repo root. It is deployed as a fleet profile by
 **fleet** (Bicep + user-assigned managed identity):
 https://github.com/marcusmayo/fleet
 
 A self-contained **Terraform** deployment of the same twin (one `apply`, three
-providers, pushes this scaffold into its own repo) is preserved separately at:
+providers, pushes this agent into its own repo) is preserved separately at:
 https://github.com/marcusmayo/castor-tf-iac
 
 ## Run it with a model
@@ -24,7 +24,7 @@ OpenRouter key is all you need.
 
 ```bash
 git clone https://github.com/marcusmayo/castor.git
-cd castor/scaffold/infra/docker
+cd castor/infra/docker
 
 cp castor.env.example castor.env
 #   set OPENROUTER_API_KEY and ANTHROPIC_API_KEY   (both explained below)
@@ -119,7 +119,7 @@ secrets layer on Key Vault + managed identity (no host-local credentials).
   load-bearing state. Deletes are operator-explicit.
 
 ```
-scaffold/
+castor/
   gate/          egress tripwire + claude -p spine (redact, audit)
   scripts/       intake, register, digest, model-routing, health, scan-tree, ...
   webchat/       auth + pending panel + interpret actions

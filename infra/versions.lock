@@ -10,7 +10,7 @@ UBUNTU_BASE_IMAGE=ubuntu:24.04
 UBUNTU_BASE_DIGEST=sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
 # Castor runtime adds poppler-utils (pdftotext), tesseract-ocr (OCR), gzip
 # (log-rotate) from the Ubuntu repo — versioned by the pinned base image digest.
-# Node deps pinned by package-lock.json in scaffold root, gate/, and webchat/
+# Node deps pinned by package-lock.json in the repo root, gate/, and webchat/
 # (integrity enforced by npm ci). No Python pip deps: the only Python script
 # (sunday-maintenance.py) is stdlib-only.
 # LiteLLM gateway (OPTIONAL, --profile gateway). Official proxy image ONLY --
