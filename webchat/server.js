@@ -37,7 +37,13 @@ const modelRouting = require(path.join(AGENT_ROOT, 'scripts', 'model-routing'));
 // app-TOTP removed: Cloudflare Access is the sole authenticator (edge-only).
 
 const app = express();
-app.use(express.json({ limit: '1mb' }));
+// The global parser must SKIP the routes core marks as big-JSON. It is registered before
+// mountChatOps, so without this it consumes and rejects their base64 body first and the
+// route's own 50mb parser never runs -- a 906 KB photo came back "too large (50mb limit)"
+// because base64 inflates by a third and 1mb is really a ~786 KB file cap. Everything
+// else keeps the small cap deliberately: a chat prompt has no business being megabytes.
+const smallJson = express.json({ limit: '1mb' });
+app.use((req, res, next) => (chatOps.usesBigJson(req.path) ? next() : smallJson(req, res, next)));
 
 const sessionParser = session({
   secret: process.env.SESSION_SECRET || require('crypto').randomBytes(32).toString('hex'),
