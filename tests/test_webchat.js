@@ -1,60 +1,86 @@
 const assert = require('assert');
-const path = require('path'), fs = require('fs');
-const speakeasy = require(path.join(__dirname,'..','webchat','node_modules','speakeasy'));
+const path = require('path'), fs = require('fs'), os = require('os');
 
-const ROOT = path.join(__dirname,'..','root');
+// Rewritten with test_pending_http.js for the same reason: this pointed AGENT_ROOT at a `root/`
+// directory that is not in the repo, and authenticated by minting a TOTP token against /verify.
+// app-TOTP was removed fleet-wide when Cloudflare Access became the sole authenticator, so the
+// auth half of this file asserted a mechanism that no longer exists -- against a tree that never
+// did. The surface assertions were still worth keeping, so they were kept and re-pointed.
+const REPO = path.join(__dirname, '..');
+const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'webchat-'));
+for (const d of ['gate', 'scripts', 'system']) fs.symlinkSync(path.join(REPO, d), path.join(ROOT, d), 'dir');
+for (const d of ['state', 'inbox']) fs.mkdirSync(path.join(ROOT, d), { recursive: true });
+
+// The routing this agent actually ships; the default tier is read, never pinned. The old
+// assertion named a model the config had since been re-pointed away from.
+const yaml = require(path.join(REPO, 'webchat', 'node_modules', 'js-yaml'));
+const ROUTING = yaml.load(fs.readFileSync(path.join(REPO, 'system', 'model-routing.yaml'), 'utf8'));
+const DEFAULT_TIER = ROUTING.default_tier || 'routine';
+
 process.env.AGENT_ROOT = ROOT;
-process.env.TOTP_SECRET = speakeasy.generateSecret().base32;
 process.env.SESSION_SECRET = 'test-secret';
 process.env.CASTOR_BIND = '127.0.0.1';
+delete process.env.AUTH_MODE;              // never let a local-mode env turn the gate off
 
-const { server } = require(path.join(__dirname,'..','webchat','server.js'));
+const { server } = require(path.join(REPO, 'webchat', 'server.js'));
 
-let pass=0; const fail=[];
-function t(n,fn){return Promise.resolve().then(fn).then(()=>{pass++;console.log('  PASS  '+n);}).catch(e=>{fail.push(n);console.log('  FAIL  '+n+' :: '+e.message);});}
+// The one way to be authenticated: an edge header. There is no login page and no token.
+const AUTHED = { 'cf-access-client-id': 'test-service-token' };
+
+let pass = 0; const fail = [];
+function t(n, fn) { return Promise.resolve().then(fn).then(() => { pass++; console.log('  PASS  ' + n); }).catch(e => { fail.push(n); console.log('  FAIL  ' + n + ' :: ' + e.message); }); }
 
 (async () => {
-  await new Promise(r => server.listen(0,'127.0.0.1',r));
-  const port = server.address().port;
-  const base = `http://127.0.0.1:${port}`;
-  const goodToken = () => speakeasy.totp({ secret: process.env.TOTP_SECRET, encoding: 'base32' });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
 
   console.log('\n--- unauthenticated surface ---');
-  await t('liveness probe is 200 without auth', async () => { const r=await fetch(base+'/health/liveliness'); assert.strictEqual(r.status,200); });
-  await t('login page serves', async () => { const r=await fetch(base+'/login'); assert.strictEqual(r.status,200); assert.ok((await r.text()).includes('Enter your 6-digit code')); });
-  await t('chat page blocked without auth (401)', async () => { const r=await fetch(base+'/'); assert.strictEqual(r.status,401); });
-  await t('/model blocked without auth', async () => { const r=await fetch(base+'/model'); assert.strictEqual(r.status,401); });
+  await t('liveness probe is 200 without auth', async () => { assert.strictEqual((await fetch(base + '/health/liveliness')).status, 200); });
+  await t('chat page refused without an edge header (403)', async () => { assert.strictEqual((await fetch(base + '/')).status, 403); });
+  await t('/model refused without an edge header (403)', async () => { assert.strictEqual((await fetch(base + '/model')).status, 403); });
 
-  console.log('\n--- TOTP auth ---');
-  await t('wrong code rejected 401', async () => { const r=await fetch(base+'/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:'000000'})}); assert.strictEqual(r.status,401); });
-  let cookie;
-  await t('correct code authenticates and sets cookie', async () => {
-    const r=await fetch(base+'/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:goodToken()})});
-    assert.strictEqual(r.status,200); cookie=r.headers.get('set-cookie').split(';')[0]; assert.ok(cookie.startsWith('connect.sid'));
+  console.log('\n--- the removed login mechanism stays removed ---');
+  await t('no /login page', async () => { assert.strictEqual((await fetch(base + '/login')).status, 404); });
+  await t('no /verify endpoint', async () => { assert.strictEqual((await fetch(base + '/verify', { method: 'POST' })).status, 404); });
+  await t('server.js carries no TOTP verification', async () => {
+    const src = fs.readFileSync(path.join(REPO, 'webchat', 'server.js'), 'utf8');
+    for (const dead of ['speakeasy', 'TOTP_SECRET']) assert.ok(!src.includes(dead), 'still references ' + dead);
   });
 
   console.log('\n--- authenticated surface ---');
-  await t('chat page serves once authed', async () => { const r=await fetch(base+'/',{headers:{Cookie:cookie}}); assert.strictEqual(r.status,200); assert.ok((await r.text()).includes('Ask Castor')); });
-  await t('/model returns routing, default = Keel routine alias', async () => {
-    const r=await fetch(base+'/model',{headers:{Cookie:cookie}}); const d=await r.json();
-    assert.strictEqual(d.ok,true); assert.strictEqual(d.tiers.find(x=>x.default).model_name,'claude-sonnet-4-5');
+  await t('chat page serves with an edge header', async () => {
+    const r = await fetch(base + '/', { headers: AUTHED });
+    assert.strictEqual(r.status, 200); assert.ok((await r.text()).includes('Ask Castor'));
+  });
+  await t('/model returns routing whose default is the tier default_tier names', async () => {
+    const d = await (await fetch(base + '/model', { headers: AUTHED })).json();
+    assert.strictEqual(d.ok, true);
+    assert.strictEqual(d.tiers.find(x => x.default).model_name, ROUTING.tiers[DEFAULT_TIER].model_name);
   });
 
   console.log('\n--- UI content: chips + discoverability ---');
   await t('all six Castor chips present', async () => {
-    const html=fs.readFileSync(path.join(__dirname,'..','webchat','chat.html'),'utf8');
-    for (const c of ['/morning','/pipeline','/compliance-report','/triage','/people','/draft']) assert.ok(html.includes("ins('"+c),'missing '+c);
+    const html = fs.readFileSync(path.join(REPO, 'webchat', 'chat.html'), 'utf8');
+    for (const c of ['/morning', '/pipeline', '/compliance-report', '/triage', '/people', '/draft']) assert.ok(html.includes("ins('" + c), 'missing ' + c);
   });
-  await t('model-change command shown to operator', async () => {
-    const html=fs.readFileSync(path.join(__dirname,'..','webchat','chat.html'),'utf8');
-    assert.ok(html.includes('model-routing.js set'));
+  // The operator can still change the model; the affordance moved. This used to assert the
+  // page told you to run `model-routing.js set` -- a CLI instruction that was replaced by a
+  // picker single-sourced in fleet-core. Pinning the instruction rather than the capability
+  // is how it went stale, so assert the capability: the bar the picker mounts into, and the
+  // shared control module that mounts it.
+  await t('the operator can change the model from the page', async () => {
+    const html = fs.readFileSync(path.join(REPO, 'webchat', 'chat.html'), 'utf8');
+    assert.ok(html.includes('id="modelbar"'), 'no model bar for the picker to mount into');
+    assert.ok(html.includes('ChatControls.init'), 'shared controls not initialised');
+    const ctl = fs.readFileSync(path.join(REPO, 'scripts', 'webchat-controls.js'), 'utf8');
+    assert.ok(ctl.includes("/model/select"), 'the shared picker does not call /model/select');
   });
   await t('no Keel portfolio endpoints leaked in', async () => {
-    const src=fs.readFileSync(path.join(__dirname,'..','webchat','server.js'),'utf8');
-    for (const dead of ['/export','/run-apply','/run-reconcile','normalize-jira','WSJF']) assert.ok(!src.includes(dead),'leaked: '+dead);
+    const src = fs.readFileSync(path.join(REPO, 'webchat', 'server.js'), 'utf8');
+    for (const dead of ['/export', '/run-apply', '/run-reconcile', 'normalize-jira', 'WSJF']) assert.ok(!src.includes(dead), 'leaked: ' + dead);
   });
 
   console.log(`\nWEBCHAT SPINE: ${pass} passed, ${fail.length} failed`);
   server.close();
-  if (fail.length){ console.log('failed: '+fail.join(', ')); process.exit(1); }
+  if (fail.length) { console.log('failed: ' + fail.join(', ')); process.exit(1); }
 })();
