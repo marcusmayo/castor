@@ -11,20 +11,40 @@ const mr = require(path.join(__dirname,'..','scripts','model-routing.js'));
 let pass=0; const fail=[];
 function t(n,fn){try{fn();pass++;console.log('  PASS  '+n);}catch(e){fail.push(n);console.log('  FAIL  '+n+' :: '+e.message);}}
 
-console.log('\n--- pinned to Keel\'s three ---');
-t('routine resolves to the sonnet alias (kimi-k3 lane)', () => assert.strictEqual(mr.resolve('routine'), 'claude-sonnet-4-5'));
-t('triage resolves to the haiku alias (glm-5.2 lane)', () => assert.strictEqual(mr.resolve('triage'), 'claude-3-5-haiku-20241022'));
-t('complex resolves to deepseek', () => assert.strictEqual(mr.resolve('complex'), 'deepseek-v4-pro'));
-t('no tier -> default (routine)', () => assert.strictEqual(mr.resolve(), 'claude-sonnet-4-5'));
+// Read the routing, do not mirror it. These assertions used to pin three literal model
+// names; the tiers were later re-pointed and five more were added, and the test stayed
+// wrong for months because nothing ran it. What is worth pinning is the MECHANISM --
+// every declared tier resolves to the model_name IT declares, the default is the tier
+// named by default_tier, and an undeclared tier is refused. The values are the agent's.
+const ROUTING = yaml.load(fs.readFileSync(path.join(__dirname,'..','system','model-routing.yaml'),'utf8'));
+const TIERS = ROUTING.tiers;
+const TIER_NAMES = Object.keys(TIERS);
+
+console.log('\n--- tier resolution, read from this agent\'s own routing ---');
+t('every declared tier resolves to the model_name it declares', () => {
+  assert.ok(TIER_NAMES.length >= 1, 'model-routing.yaml declares no tiers');
+  for (const tier of TIER_NAMES) {
+    assert.strictEqual(mr.resolve(tier), TIERS[tier].model_name, 'tier ' + tier);
+  }
+});
+t('no tier resolves to the tier named by default_tier', () => {
+  const d = ROUTING.default_tier || 'routine';
+  assert.ok(TIERS[d], 'default_tier ' + d + ' is not a declared tier');
+  assert.strictEqual(mr.resolve(), TIERS[d].model_name);
+});
 t('unknown tier errors', () => assert.throws(() => mr.resolve('frontier'), /unknown tier/));
 
 console.log('\n--- gateway config generated from routing ---');
-t('gateway maps all three names to OpenRouter slugs', () => {
+t('gateway maps every declared tier to the slug that tier declares', () => {
   const cfg = yaml.load(mr.gatewayConfig());
   const byName = Object.fromEntries(cfg.model_list.map(m => [m.model_name, m.litellm_params.model]));
-  assert.strictEqual(byName['claude-sonnet-4-5'], 'openrouter/moonshotai/kimi-k3');
-  assert.strictEqual(byName['claude-3-5-haiku-20241022'], 'openrouter/z-ai/glm-5.2');
-  assert.strictEqual(byName['deepseek-v4-pro'], 'openrouter/deepseek/deepseek-v4-pro');
+  for (const tier of TIER_NAMES) {
+    assert.strictEqual(byName[TIERS[tier].model_name], TIERS[tier].openrouter_slug, 'tier ' + tier);
+  }
+});
+t('one deployment per model_name -- a cooled-down slug cannot take the others down', () => {
+  const names = yaml.load(mr.gatewayConfig()).model_list.map(m => m.model_name);
+  assert.strictEqual(new Set(names).size, names.length, 'a duplicate model_name would pool deployments');
 });
 t('gateway uses env key, not a literal', () => {
   const cfg = yaml.load(mr.gatewayConfig());
@@ -67,7 +87,7 @@ t('set writes the persistent state copy, not the image default', () => {
   assert.ok(stateRaw.startsWith('# Model routing'), 'header comment lost in state copy');
   assert.ok(yaml.load(stateRaw).tiers, 'state copy no longer valid yaml');
   const defaultRaw = fs.readFileSync(path.join(tmp,'system','model-routing.yaml'), 'utf8');
-  assert.strictEqual(yaml.load(defaultRaw).tiers.complex.openrouter_slug, 'openrouter/deepseek/deepseek-v4-pro',
+  assert.strictEqual(yaml.load(defaultRaw).tiers.complex.openrouter_slug, TIERS.complex.openrouter_slug,
     'image default must be untouched by set');
 });
 t('reads prefer the state copy once it exists', () => {
@@ -96,15 +116,16 @@ t('set-vision can change the endpoint too', () => {
 });
 t('vision change does not disturb the text tiers', () => {
   const mr2 = require(path.join(__dirname,'..','scripts','model-routing.js'));
-  assert.strictEqual(mr2.resolve('routine'), 'claude-sonnet-4-5');
+  // routine has not been touched by any set above, so it must still read as shipped
+  assert.strictEqual(mr2.resolve('routine'), TIERS.routine.model_name);
 });
 
 console.log('\n--- CLI surface ---');
 const { execFileSync } = require('child_process');
 function cli(args){ try { return { code:0, out: execFileSync('node',[path.join(__dirname,'..','scripts','model-routing.js'),...args],{encoding:'utf8',env:{...process.env,AGENT_ROOT:tmp}}) }; } catch(e){ return { code:e.status, out:(e.stdout||'')+(e.stderr||'') }; } }
-t('resolve CLI prints a bare model name', () => { const r=cli(['resolve','routine']); assert.strictEqual(r.code,0); assert.strictEqual(r.out.trim(),'claude-sonnet-4-5'); });
+t('resolve CLI prints a bare model name', () => { const r=cli(['resolve','routine']); assert.strictEqual(r.code,0); assert.strictEqual(r.out.trim(), TIERS.routine.model_name); });
 t('list CLI marks the default tier', () => { const r=cli(['list']); assert.ok(/routine\*/.test(r.out)); });
-t('gateway-config CLI emits valid yaml', () => { const r=cli(['gateway-config']); assert.ok(yaml.load(r.out).model_list.length===3); });
+t('gateway-config CLI emits valid yaml, one entry per declared tier', () => { const r=cli(['gateway-config']); assert.strictEqual(yaml.load(r.out).model_list.length, TIER_NAMES.length); });
 t('vision CLI prints the current vision model', () => { const r=cli(['vision']); assert.ok(/vision model:/.test(r.out)); });
 t('set-vision CLI persists', () => { const r=cli(['set-vision','--model','claude-3-5-haiku-20241022']); assert.strictEqual(r.code,0); assert.ok(cli(['vision']).out.includes('claude-3-5-haiku-20241022')); });
 t('unknown command exits non-zero', () => { assert.notStrictEqual(cli(['bogus']).code,0); });
