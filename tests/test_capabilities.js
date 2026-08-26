@@ -4,8 +4,8 @@ const { execFileSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cap-'));
-fs.mkdirSync(path.join(tmp, 'System'), { recursive: true });
-fs.copyFileSync(path.join(ROOT, 'System', 'capabilities.yaml'), path.join(tmp, 'System', 'capabilities.yaml'));
+fs.mkdirSync(path.join(tmp, 'system'), { recursive: true });
+fs.copyFileSync(path.join(ROOT, 'system', 'capabilities.yaml'), path.join(tmp, 'system', 'capabilities.yaml'));
 process.env.AGENT_ROOT = tmp;
 
 let pass = 0; const fail = [];
@@ -40,7 +40,7 @@ t('every capability has setup steps', () => {
   for (const c of cap.loadRegistry()) assert.ok((c.setup || []).length > 0, c.id + ' has no setup[]');
 });
 t('registry contains no secret values', () => {
-  const raw = fs.readFileSync(path.join(ROOT, 'System', 'capabilities.yaml'), 'utf8');
+  const raw = fs.readFileSync(path.join(ROOT, 'system', 'capabilities.yaml'), 'utf8');
   for (const re of [/\bsk-[A-Za-z0-9]{20,}/, /\bAKIA[0-9A-Z]{16}/, /\bghp_[A-Za-z0-9]{36}/, /\b\d{9,}:[A-Za-z0-9_-]{30,}/]) {
     assert.ok(!re.test(raw), 'possible credential in registry: ' + re);
   }

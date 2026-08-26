@@ -3,9 +3,9 @@ const fs = require('fs'), path = require('path'), os = require('os');
 const ROOT = path.join(__dirname,'..');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(),'notify-'));
-fs.mkdirSync(path.join(tmp,'System'),{recursive:true});
+fs.mkdirSync(path.join(tmp,'system'),{recursive:true});
 fs.mkdirSync(path.join(tmp,'state'),{recursive:true});
-fs.copyFileSync(path.join(ROOT,'System','capabilities.yaml'), path.join(tmp,'System','capabilities.yaml'));
+fs.copyFileSync(path.join(ROOT,'system','capabilities.yaml'), path.join(tmp,'system','capabilities.yaml'));
 process.env.AGENT_ROOT = tmp;
 
 const notify = require(path.join(ROOT,'scripts','notify.js'));

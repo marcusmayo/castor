@@ -3,8 +3,8 @@ const fs = require('fs'), path = require('path'), os = require('os');
 const yaml = require(path.join(__dirname,'..','node_modules','js-yaml'));
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'model-'));
-fs.mkdirSync(path.join(tmp,'System'), { recursive: true });
-fs.copyFileSync(path.join(__dirname,'..','System','model-routing.yaml'), path.join(tmp,'System','model-routing.yaml'));
+fs.mkdirSync(path.join(tmp,'system'), { recursive: true });
+fs.copyFileSync(path.join(__dirname,'..','system','model-routing.yaml'), path.join(tmp,'system','model-routing.yaml'));
 process.env.AGENT_ROOT = tmp;
 const mr = require(path.join(__dirname,'..','scripts','model-routing.js'));
 
@@ -66,7 +66,7 @@ t('set writes the persistent state copy, not the image default', () => {
   const stateRaw = fs.readFileSync(path.join(tmp,'state','model-routing.yaml'), 'utf8');
   assert.ok(stateRaw.startsWith('# Model routing'), 'header comment lost in state copy');
   assert.ok(yaml.load(stateRaw).tiers, 'state copy no longer valid yaml');
-  const defaultRaw = fs.readFileSync(path.join(tmp,'System','model-routing.yaml'), 'utf8');
+  const defaultRaw = fs.readFileSync(path.join(tmp,'system','model-routing.yaml'), 'utf8');
   assert.strictEqual(yaml.load(defaultRaw).tiers.complex.openrouter_slug, 'openrouter/deepseek/deepseek-v4-pro',
     'image default must be untouched by set');
 });
