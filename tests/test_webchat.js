@@ -48,9 +48,19 @@ function t(n, fn) { return Promise.resolve().then(fn).then(() => { pass++; conso
   });
 
   console.log('\n--- authenticated surface ---');
-  await t('chat page serves with an edge header', async () => {
+  // Assert that branding SUBSTITUTES, not what it substitutes to. chat.html ships the
+  // literal {{AGENT_NAME}} and serveBranded fills it at serve time from the deploy-time
+  // overlay system/agent.local.yaml, falling back to agent.yaml's profile default. Pinning
+  // "Ask Castor" only held where no overlay exists -- so it passed in a bare checkout and
+  // failed on every real agent, which is named heimdall or smalt.
+  await t('chat page serves branded with THIS agent name', async () => {
+    const auth = require(path.join(REPO, 'scripts', 'auth.js'));
+    const name = auth.readAgentName(REPO) || 'Agent';
     const r = await fetch(base + '/', { headers: AUTHED });
-    assert.strictEqual(r.status, 200); assert.ok((await r.text()).includes('Ask Castor'));
+    assert.strictEqual(r.status, 200);
+    const html = await r.text();
+    assert.ok(html.includes('Ask ' + name), 'page does not greet as ' + name);
+    assert.ok(!html.includes('{{AGENT_NAME}}'), 'placeholder left unsubstituted in the served page');
   });
   await t('/model returns routing whose default is the tier default_tier names', async () => {
     const d = await (await fetch(base + '/model', { headers: AUTHED })).json();
