@@ -44,6 +44,14 @@ persona: |
 # pipeline picks it up. Mechanism in fleet-core webchat-ops; this value is per agent.
 stage_dest: inbox/drop
 
+# What PROCESS runs after the move, and where a refusal lands. Declaring these makes
+# PROCESS report the intake VERDICT instead of reporting the move: an unsupported type or
+# an oversize file comes back at upload time rather than being recorded in a directory the
+# operator never opens. Both resolve against AGENT_ROOT (= /app in the container), which is
+# the same root intake.js uses.
+intake_cmd: node scripts/intake.js --once
+quarantine_dir: inbox/quarantine
+
 # Queue visibility (fleet-core queue.js): non-dot files in these dirs count as queued.
 # Mechanism in core; these VALUES are per agent.
 queue:
