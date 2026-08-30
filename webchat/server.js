@@ -187,9 +187,11 @@ wss.on('connection', (ws, req) => {
     ws.send(JSON.stringify({ type: 'start' }));
     auditRecord({ action: 'WEBCHAT', status: 'MODEL_CALL', tier, model });
 
-    // CHAT LANE: a declared skill route runs HERE, not at the model. Typing /run-reconcile used
-    // to reach Claude Code, whose slash namespace is .claude/commands, and come back "Unknown
-    // command" -- a truthful refusal from the wrong component. Mechanism is fleet-core
+    // CHAT LANE: a declared skill route runs HERE, not at the model. A slash route typed into
+    // chat used to reach Claude Code, whose slash namespace is .claude/commands, and come back
+    // "Unknown command" -- a truthful refusal from the wrong component. (No example route is
+    // named in this comment on purpose: this file is scanned for cross-profile leakage, and a
+    // route from the other profile is a leak even inside a comment.) Mechanism is fleet-core
     // skills.chatSkill: same param validation, same preconditions, same job record and audit
     // entry as the HTTP route, so a skill run from chat is identical to one run from a click.
     // null means the prompt named no declared route, and the model answers exactly as before.
