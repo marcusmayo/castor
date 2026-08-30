@@ -187,6 +187,35 @@ wss.on('connection', (ws, req) => {
     ws.send(JSON.stringify({ type: 'start' }));
     auditRecord({ action: 'WEBCHAT', status: 'MODEL_CALL', tier, model });
 
+    // CHAT LANE: a declared skill route runs HERE, not at the model. Typing /run-reconcile used
+    // to reach Claude Code, whose slash namespace is .claude/commands, and come back "Unknown
+    // command" -- a truthful refusal from the wrong component. Mechanism is fleet-core
+    // skills.chatSkill: same param validation, same preconditions, same job record and audit
+    // entry as the HTTP route, so a skill run from chat is identical to one run from a click.
+    // null means the prompt named no declared route, and the model answers exactly as before.
+    {
+      const _cs = skillsCore.chatSkill(AGENT_ROOT, prompt, {
+        actor: skillsCore.actorOf(req, AGENT_ROOT), onBehalf: skillsCore.onBehalfOf(req, skillsCore.actorOf(req, AGENT_ROOT)),
+      });
+      if (_cs) {
+        if (!_cs.ok) {
+          ws.send(JSON.stringify({ type: 'token', text: _cs.output }));
+          ws.send(JSON.stringify({ type: 'done' }));
+          return;
+        }
+        ws.send(JSON.stringify({ type: 'step', text: 'running ' + _cs.route }));
+        const _poll = setInterval(() => {
+          const j = skillsCore.getJob(AGENT_ROOT, _cs.job.jobId);
+          if (!j || j.status === 'running') return;
+          clearInterval(_poll);
+          ws.send(JSON.stringify({ type: 'token', text: String(j.output || '') }));
+          if (j.timedOut) ws.send(JSON.stringify({ type: 'token', text: '\n[timed out]' }));
+          ws.send(JSON.stringify({ type: 'done' }));
+        }, 500);
+        return;
+      }
+    }
+
     // /compliance-report: refresh governance evidence server-side (deterministic,
     // execFileSync) before the skill reads state/compliance/*.json. Keeps the LLM
     // out of the execution path; the skill only aggregates.
