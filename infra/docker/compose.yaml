@@ -26,7 +26,10 @@ services:
     environment:
       CASTOR_BIND: 0.0.0.0       # container netns; host exposure is the ports: line
       AGENT_ROOT: /app
-      AGENT_NAME: Castor         # notify label / from-slug (shared-core notify.js reads this)
+      # AGENT_NAME is NOT set here on purpose: `environment:` overrides `env_file`, so a literal
+      # would mask the deploy-time name bootstrap writes into castor.env and every castor agent
+      # would answer to the profile default. notify.js reads the same variable and now gets the
+      # agent's real name instead of the profile's.
       NODE_PATH: /app/webchat/node_modules   # scripts/ modules (model-routing.js) resolve js-yaml from webchat deps
       HOME: /home/castor         # claude CLI config dir
       CLAUDE_CONFIG_DIR: /home/castor/.claude   # relocate .claude.json INTO the persistent volume (kills the recreate-warning)
