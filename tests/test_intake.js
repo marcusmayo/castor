@@ -135,6 +135,29 @@ const run = () => silent(() => intake.runOnce());
     assert.ok(!/^Acronyms\nAMS\.?\n\nNESSY/m.test(text),
       'the extraction is column-major -- every label first, then every cell, which is the failure mode');
   });
+  await t('a cell whose first line sits ABOVE its label still belongs to that label', () => {
+    const text = fs.readFileSync(path.join(intake.INBOX, flagsFor('grid.png').extraction.text_file), 'utf8');
+    const lines = text.split('\n');
+    const at = re => lines.findIndex(l => re.test(l));
+    // In the image "Eligibility check" is drawn above the CPS label, so reading
+    // top to bottom attaches it to the row before. That is the one-row shift.
+    const cps = at(/^cps\b/i), elig = at(/Eligibility check/), cust = at(/Customer\s+attestation/), nessy = at(/^NESSY\b/);
+    assert.ok(cps >= 0 && elig >= 0 && cust >= 0 && nessy >= 0, 'fixture rows not found: ' + JSON.stringify({ cps, elig, cust, nessy }));
+    assert.ok(elig > cps, 'Eligibility check landed on the row above CPS -- the shift is back');
+    assert.ok(cust > nessy, 'Customer attestation landed on the row above NESSY');
+    assert.strictEqual(flagsFor('grid.png').extraction.legibility.rows_bound, true);
+  });
+  await t('laying garbage out in columns must not make it legible', () => {
+    // Padding a garbled read into a grid drops its token count and RAISES its word
+    // ratio -- 0.588 linear became 0.692 gridded, which cleared the floor. The
+    // floor is judged on the linear reading for exactly this reason.
+    const fl = flagsFor('bad.png');
+    const extract = require(path.join(ROOT, 'scripts', 'extract.js'));
+    assert.strictEqual(fl.extraction.scan_state, 'vision-pending',
+      'the grid reading promoted an unreadable image past the floor');
+    assert.ok(fl.extraction.legibility.ratio < extract.OCR_MIN_WORD_RATIO,
+      'the recorded ratio is the gridded one, not the reading the floor judged');
+  });
 
   console.log('\n--- backfill: an already-admitted item can be re-read ---');
   let staleDest = null, staleAdmittedAt = null, ledgerBefore = null, archiveBefore = null;

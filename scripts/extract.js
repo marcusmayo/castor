@@ -56,6 +56,10 @@ const GRID_MAX_COLS      = Number(process.env.OCR_GRID_MAX_COLS || 240);
 // the linear reading's words. Measured: on a three-column table the linear read
 // scored higher while dissolving every row.
 const GRID_WORD_FLOOR    = Number(process.env.OCR_GRID_WORD_FLOOR || 0.8);
+// A page counts as columnar on both a share and a count, so a two-line page with
+// one gapped line cannot trip it.
+const COLUMNAR_MIN_SHARE = Number(process.env.OCR_COLUMNAR_MIN_SHARE || 0.25);
+const COLUMNAR_MIN_LINES = Number(process.env.OCR_COLUMNAR_MIN_LINES || 3);
 const OCR_MIN_WORD_RATIO = Number(process.env.OCR_MIN_WORD_RATIO || 0.65);
 
 function stripBom(s) { return s.charCodeAt(0) === 0xFEFF ? s.slice(1) : s; }
@@ -199,13 +203,62 @@ function ocrGrid(file) {
     // a table leaves empty channels between its columns and scores more. This is
     // the signal word-counting cannot see -- on a real table the linear read
     // wins on word count while having destroyed every row.
-    const spans = words.map(w => [w.left, w.left + w.text.length * charW]).sort((a, b) => a[0] - b[0]);
-    let columns = 1, edge = spans[0][1];
-    for (const [a, b] of spans) {
-      if (a - edge > charW * 6) columns++;
-      edge = Math.max(edge, b);
+    // Measured PER LINE, not across the page. A page-wide gap count is masked by
+    // any full-width line -- a chat header or a message spanning the width fills
+    // the channels between columns, and a photograph of a screen full of table
+    // reported one column. Measured share of lines carrying an internal gap:
+    // prose 0.13, a photographed table 0.33, a rendered table 0.42.
+    let columns = 1, gapped = 0, col1End = 0;
+    for (const b of bands) {
+      const ws = b.words.slice().sort((p, q) => p.left - q.left);
+      let clusters = 1, edge = ws[0].left + ws[0].text.length * charW;
+      for (const w of ws.slice(1)) {
+        if (w.left - edge > charW * 6) { if (clusters === 1) col1End = Math.max(col1End, edge); clusters++; }
+        edge = Math.max(edge, w.left + w.text.length * charW);
+      }
+      if (clusters > columns) columns = clusters;
+      if (clusters >= 2) gapped++;
     }
-    return { text, columns };
+    const columnar = gapped >= COLUMNAR_MIN_LINES && gapped / bands.length >= COLUMNAR_MIN_SHARE;
+    if (!columnar) return { text, columns };
+
+    // Bind each continuation line to the row it belongs to, by VERTICAL DISTANCE
+    // to the nearest label rather than to whichever label happens to precede it.
+    // A multi-line cell straddles its own label -- its first line sits ABOVE the
+    // label -- so reading top to bottom attaches that line to the row above. That
+    // is the one-row shift, and it survived both an OCR pass and a vision pass.
+    // Only the ORDER of lines changes; no text is altered and no cell is merged.
+    const isLabel = b => b.words[0].left <= col1End;
+    const labels = [];
+    bands.forEach((b, i) => { if (isLabel(b)) labels.push(i); });
+    if (labels.length < 2) return { text, columns };
+
+    // Lines outside the labelled region are headers or footers and stay put.
+    const first = labels[0], last = labels[labels.length - 1];
+    const owner = new Map(labels.map(i => [i, [i]]));
+    for (let i = first + 1; i < bands.length; i++) {
+      if (isLabel(bands[i])) continue;
+      if (i > last && bands[i].mid - bands[last].mid > tol * 4) continue;   // trailing, not a cell
+      let best = labels[0], bestD = Infinity;
+      for (const li of labels) {
+        const d = Math.abs(bands[i].mid - bands[li].mid);
+        if (d < bestD) { bestD = d; best = li; }
+      }
+      owner.get(best).push(i);
+    }
+
+    // A bound line is emitted WITH its label, never at its own position -- emitting
+    // it in place is what left a cell sitting above the row it belongs to.
+    const bound = new Set();
+    for (const group of owner.values()) for (const j of group) bound.add(j);
+    const order = [];
+    for (let i = 0; i < bands.length; i++) {
+      if (owner.has(i)) { for (const j of owner.get(i)) order.push(j); continue; }
+      if (!bound.has(i)) order.push(i);
+    }
+    if (order.length !== bands.length) return { text, columns };   // refuse a reorder that lost a line
+    const gridLines = text.split('\n');
+    return { text: order.map(i => gridLines[i]).join('\n'), columns, rows_bound: true };
   } catch (_) { return null; }
   finally { try { fs.unlinkSync(out + '.tsv'); } catch (_) {} }
 }
@@ -248,12 +301,20 @@ function extractImage(buf, ext) {
     const grid = ocrGrid(bestSoFar.path);
     if (grid) {
       const gs = scoreLegibility(grid.text);
-      // On a page with columns, structure beats a handful of extra words: the
-      // linear read of a table can score higher while having put every cell on
-      // the wrong row. Require the grid to be close on words, not to beat them.
-      const preferGrid = grid.columns >= 2 && gs.words >= bestSoFar.score.words * GRID_WORD_FLOOR;
-      readings.push({ ...bestSoFar, text: grid.text, mode: 'psm6-grid', columns: grid.columns,
-                      score: preferGrid ? { ...gs, words: bestSoFar.score.words + 1 } : gs, realScore: gs });
+      // WHETHER the text is legible and HOW it should be laid out are different
+      // questions, and conflating them let garbage through: padding a garbled read
+      // into columns drops its token count and RAISES its word ratio -- an
+      // unreadable fixture went 0.588 linear to 0.692 gridded and cleared the
+      // floor. So the floor is judged on the linear reading, always; the grid only
+      // decides layout, and only when it recovers a comparable number of words.
+      const preferGrid = grid.rows_bound && gs.words >= bestSoFar.score.words * GRID_WORD_FLOOR;
+      if (preferGrid) {
+        readings.push({ ...bestSoFar, text: grid.text, mode: 'psm6-grid', columns: grid.columns,
+                        rows_bound: grid.rows_bound, score: { ...bestSoFar.score, words: bestSoFar.score.words + 1 },
+                        realScore: bestSoFar.score, gridScore: gs });
+      } else {
+        readings.push({ ...bestSoFar, text: grid.text, mode: 'psm6-grid', columns: grid.columns, score: gs, realScore: gs });
+      }
     }
   } catch (e) {
     if (e.code === 'ENOENT') return result('', 'unscanned', 'tesseract', 'tesseract-ocr not installed');
@@ -270,6 +331,7 @@ function extractImage(buf, ext) {
   const leg = { tokens: shown.tokens, words: shown.words, ratio: shown.ratio,
                 mode: best.mode || 'psm3-linear',
                 ...(best.columns ? { columns: best.columns } : {}),
+                ...(best.rows_bound ? { rows_bound: true } : {}),
                 ...(best.transform ? { transform: best.transform } : {}),
                 ...(oriented > 1 ? { orientations_tried: oriented } : {}) };
   const attach = r => { r.legibility = leg; return r; };
