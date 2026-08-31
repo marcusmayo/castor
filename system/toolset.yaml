@@ -1,0 +1,9 @@
+# What this profile CARRIES. Not what it reaches -- an inventory, checked in both directions by
+# core/toolset.js at build time (RUN node /app/scripts/toolset.js /app --check):
+#   - a tools/*.py in the repo that is absent from this list FAILS the build
+#   - a name in this list that is absent from the repo FAILS the build
+# So a tool cannot ship unnoticed, and this file cannot name something that is not there.
+# The analyzer reports separately which of these are reached by skills.yaml, handler code or the
+# e2e harness, and which are carried but reached by nothing -- run it with no --check to see.
+tools:
+  []
