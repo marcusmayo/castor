@@ -48,6 +48,14 @@ const OCR_MIN_ALNUM = Number(process.env.OCR_MIN_ALNUM || 12);
 // The floor sits in that gap. It is only applied when there is enough text to
 // judge — a four-token label cannot be called illegible on this evidence.
 const OCR_MIN_TOKENS     = Number(process.env.OCR_MIN_TOKENS || 12);
+// Words below this tesseract confidence are dropped from the grid rebuild, and
+// a grid line is capped so a wide photograph cannot produce absurd lines.
+const OCR_MIN_WORD_CONF  = Number(process.env.OCR_MIN_WORD_CONF || 30);
+const GRID_MAX_COLS      = Number(process.env.OCR_GRID_MAX_COLS || 240);
+// A columnar grid reading is preferred once it recovers at least this share of
+// the linear reading's words. Measured: on a three-column table the linear read
+// scored higher while dissolving every row.
+const GRID_WORD_FLOOR    = Number(process.env.OCR_GRID_WORD_FLOOR || 0.8);
 const OCR_MIN_WORD_RATIO = Number(process.env.OCR_MIN_WORD_RATIO || 0.65);
 
 function stripBom(s) { return s.charCodeAt(0) === 0xFEFF ? s.slice(1) : s; }
@@ -127,6 +135,81 @@ function ocrFile(file) {
                       { encoding: 'utf8', timeout: 60000, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
 }
 
+// A second way to read the same image. tesseract's plain output is a linear
+// stream: a table arrives with its rows dissolved, and whatever reads it next
+// has to guess which cell belonged to which row. That guess is what put an
+// acronym's notes on the row above it, in both an OCR pass and a vision pass.
+//
+// The TSV output carries a box per word, so the layout can be rebuilt instead
+// of inferred: words are bound into bands by vertical position and placed at
+// their real horizontal position in a monospace grid. Columns line up, a cell
+// spanning two visual lines still sits under its own column, and nothing has to
+// be inferred at all. Returns null if tesseract has no TSV for us, in which case
+// the plain reading stands.
+function ocrGrid(file) {
+  const out = path.join(os.tmpdir(), 'castor-tsv-' + crypto.randomBytes(6).toString('hex'));
+  try {
+    execFileSync('tesseract', [file, out, '-l', 'eng', '--psm', '6', 'tsv'],
+                 { timeout: 60000, stdio: ['ignore', 'ignore', 'ignore'] });
+    const lines = fs.readFileSync(out + '.tsv', 'utf8').split('\n');
+    const head = lines[0].split('\t');
+    const L = head.indexOf('left'), T = head.indexOf('top'), H = head.indexOf('height');
+    const C = head.indexOf('conf'), X = head.indexOf('text');
+    if (Math.min(L, T, H, C, X) < 0) return null;
+
+    const words = [];
+    for (let i = 1; i < lines.length; i++) {
+      const f = lines[i].split('\t');
+      if (f.length <= X) continue;
+      const text = (f[X] || '').trim();
+      if (!text || Number(f[C]) < OCR_MIN_WORD_CONF) continue;
+      words.push({ left: +f[L], h: +f[H], mid: +f[T] + (+f[H]) / 2, text });
+    }
+    if (!words.length) return null;
+
+    // Band tolerance comes from the words themselves. A fixed pixel bucket is
+    // wrong the moment the image resolution changes.
+    const heights = words.map(w => w.h).sort((a, b) => a - b);
+    const med = heights[Math.floor(heights.length / 2)] || 10;
+    const tol = Math.max(4, med * 0.6);
+    const charW = Math.max(4, med * 0.55);
+    const left0 = Math.min(...words.map(w => w.left));
+
+    words.sort((a, b) => a.mid - b.mid || a.left - b.left);
+    const bands = [];
+    for (const w of words) {
+      const b = bands[bands.length - 1];
+      if (b && Math.abs(w.mid - b.mid) <= tol) { b.mid = (b.mid * b.words.length + w.mid) / (b.words.length + 1); b.words.push(w); }
+      else bands.push({ mid: w.mid, words: [w] });
+    }
+    const text = bands.map(b => {
+      b.words.sort((p, q) => p.left - q.left);
+      let line = '';
+      for (const w of b.words) {
+        let col = Math.round((w.left - left0) / charW);
+        if (col > GRID_MAX_COLS) col = GRID_MAX_COLS;
+        if (col < line.length) col = line.length + (line.length ? 1 : 0);
+        line += ' '.repeat(col - line.length) + w.text;
+      }
+      return line.replace(/\s+$/, '');
+    }).join('\n');
+
+    // How many COLUMNS the page occupies, measured from the horizontal gaps
+    // between occupied regions. Prose fills the width continuously and scores 1;
+    // a table leaves empty channels between its columns and scores more. This is
+    // the signal word-counting cannot see -- on a real table the linear read
+    // wins on word count while having destroyed every row.
+    const spans = words.map(w => [w.left, w.left + w.text.length * charW]).sort((a, b) => a[0] - b[0]);
+    let columns = 1, edge = spans[0][1];
+    for (const [a, b] of spans) {
+      if (a - edge > charW * 6) columns++;
+      edge = Math.max(edge, b);
+    }
+    return { text, columns };
+  } catch (_) { return null; }
+  finally { try { fs.unlinkSync(out + '.tsv'); } catch (_) {} }
+}
+
 function extractImage(buf, ext) {
   const stem = path.join(os.tmpdir(), 'castor-x-' + crypto.randomBytes(6).toString('hex'));
   const src = stem + (ext || '.png');
@@ -157,6 +240,21 @@ function extractImage(buf, ext) {
         if (legible(readings[readings.length - 1].score)) break;
       }
     }
+
+    // Read the winning orientation a second way. Neither mode dominates: the
+    // linear read is better on prose lines, the grid is better on anything with
+    // columns, and the same rule decides -- most word-shaped tokens wins.
+    const bestSoFar = readings.reduce((a, b) => (b.score.words > a.score.words ? b : a));
+    const grid = ocrGrid(bestSoFar.path);
+    if (grid) {
+      const gs = scoreLegibility(grid.text);
+      // On a page with columns, structure beats a handful of extra words: the
+      // linear read of a table can score higher while having put every cell on
+      // the wrong row. Require the grid to be close on words, not to beat them.
+      const preferGrid = grid.columns >= 2 && gs.words >= bestSoFar.score.words * GRID_WORD_FLOOR;
+      readings.push({ ...bestSoFar, text: grid.text, mode: 'psm6-grid', columns: grid.columns,
+                      score: preferGrid ? { ...gs, words: bestSoFar.score.words + 1 } : gs, realScore: gs });
+    }
   } catch (e) {
     if (e.code === 'ENOENT') return result('', 'unscanned', 'tesseract', 'tesseract-ocr not installed');
     return result('', 'unscanned', 'tesseract', 'tesseract failed: ' + (e.message || '').slice(0, 120));
@@ -167,9 +265,13 @@ function extractImage(buf, ext) {
   // Keep the reading with the most word-shaped tokens — NOT the most characters.
   // On a sideways photograph the losing reading is often the longer one.
   const best = readings.reduce((a, b) => (b.score.words > a.score.words ? b : a));
-  const leg = { tokens: best.score.tokens, words: best.score.words, ratio: best.score.ratio,
+  const oriented = readings.filter(r => r.mode !== 'psm6-grid').length;
+  const shown = best.realScore || best.score;
+  const leg = { tokens: shown.tokens, words: shown.words, ratio: shown.ratio,
+                mode: best.mode || 'psm3-linear',
+                ...(best.columns ? { columns: best.columns } : {}),
                 ...(best.transform ? { transform: best.transform } : {}),
-                ...(readings.length > 1 ? { orientations_tried: readings.length } : {}) };
+                ...(oriented > 1 ? { orientations_tried: oriented } : {}) };
   const attach = r => { r.legibility = leg; return r; };
 
   if (alnumCount(best.text) < OCR_MIN_ALNUM) {

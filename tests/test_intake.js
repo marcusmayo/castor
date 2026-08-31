@@ -120,6 +120,22 @@ const run = () => silent(() => intake.runOnce());
   });
 
 
+  await t('a table keeps its rows -- a label and its own cell land on one line', async () => {
+    putFile('grid.png', path.join(FIX, 'table.png'));
+    const r = await run();
+    assert.strictEqual(r.length, 1, JSON.stringify(r.map(x => [x.file, x.outcome])));
+    const fl = flagsFor('grid.png');
+    assert.strictEqual(fl.extraction.scan_state, 'scanned');
+    assert.strictEqual(fl.extraction.legibility.mode, 'psm6-grid',
+      'the linear read wins on word count while dissolving every row -- structure has to decide');
+    assert.ok(fl.extraction.legibility.columns >= 2, 'the column signal did not see a table');
+    const text = fs.readFileSync(path.join(intake.INBOX, fl.extraction.text_file), 'utf8');
+    assert.ok(text.split('\n').some(l => /AMS/.test(l) && /Agent\s+License/.test(l)),
+      'the label and its own cell are on different lines -- the association a linear read destroys');
+    assert.ok(!/^Acronyms\nAMS\.?\n\nNESSY/m.test(text),
+      'the extraction is column-major -- every label first, then every cell, which is the failure mode');
+  });
+
   console.log('\n--- backfill: an already-admitted item can be re-read ---');
   let staleDest = null, staleAdmittedAt = null, ledgerBefore = null, archiveBefore = null;
   await t('setup: degrade a record to what the pre-orientation pipeline left behind', () => {
