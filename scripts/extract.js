@@ -35,8 +35,47 @@ const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.tif', '.t
 // read of a diagram rather than a text scan — routed to the vision path.
 const OCR_MIN_ALNUM = Number(process.env.OCR_MIN_ALNUM || 12);
 
+// Character count measures QUANTITY and was being read as QUALITY. A sideways
+// screenshot OCRs into hundreds of characters of plausible-looking gibberish —
+// far above any threshold set on length — and was admitted as content. What
+// separates a real read from a wrong one is the share of tokens shaped like
+// words. Measured on tesseract 5.3.4 output over rotated and upright fixtures:
+//
+//   garbage from sideways text      word ratio  0.412 – 0.562
+//   legitimate read, acronyms only  word ratio  0.795 – 0.821
+//   legitimate read, prose          word ratio  0.894 – 0.910
+//
+// The floor sits in that gap. It is only applied when there is enough text to
+// judge — a four-token label cannot be called illegible on this evidence.
+const OCR_MIN_TOKENS     = Number(process.env.OCR_MIN_TOKENS || 12);
+const OCR_MIN_WORD_RATIO = Number(process.env.OCR_MIN_WORD_RATIO || 0.65);
+
 function stripBom(s) { return s.charCodeAt(0) === 0xFEFF ? s.slice(1) : s; }
 function alnumCount(s) { return (s.match(/[A-Za-z0-9]/g) || []).length; }
+
+const VOWEL = /[aeiouyAEIOUY]/;
+function wordTokens(s) { return (String(s).match(/[A-Za-z][A-Za-z']*/g) || []); }
+
+// Orthography only — no dictionary, so nothing new has to travel with the image
+// and no vocabulary can go stale. An acronym is deliberately NOT word-shaped;
+// a table of them still clears the floor because the surrounding tokens do.
+function wordlike(w) {
+  if (w.length < 2 || w.length > 20) return false;
+  if (!VOWEL.test(w)) return false;                                          // AMS, CPS, NPS
+  if (/[bcdfghjklmnpqrstvwxzBCDFGHJKLMNPQRSTVWXZ]{5,}/.test(w)) return false;
+  if (/(.)\1\1/.test(w)) return false;
+  const body = w.slice(1);
+  if (/[a-z]/.test(body) && /[A-Z]/.test(body)) return false;                // iInydjey
+  return true;
+}
+
+function scoreLegibility(text) {
+  const ts = wordTokens(text);
+  const words = ts.filter(wordlike).length;
+  return { tokens: ts.length, words, ratio: ts.length ? Math.round((words / ts.length) * 1000) / 1000 : 0 };
+}
+const judgeable = s => s.tokens >= OCR_MIN_TOKENS;
+const legible   = s => s.ratio  >= OCR_MIN_WORD_RATIO;
 
 function result(text, scanState, extractor, note) {
   const t = text || '';
@@ -67,23 +106,58 @@ function extractPdf(buf) {
   }
 }
 
+function ocrImage(buf, ext, args) {
+  return runBinaryOnBuffer(buf, ext, tmp =>
+    execFileSync('tesseract', [tmp, 'stdout', '-l', 'eng', ...args],
+                 { encoding: 'utf8', timeout: 60000, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }));
+}
+
 function extractImage(buf, ext) {
+  let readings;
   try {
-    const text = runBinaryOnBuffer(buf, ext, tmp =>
-      execFileSync('tesseract', [tmp, 'stdout', '-l', 'eng'],
-                   { encoding: 'utf8', timeout: 60000, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }));
-    if (alnumCount(text) < OCR_MIN_ALNUM) {
-      // Little or no text recovered — the diagram case. Admit the image and
-      // mark it for the operator-attested vision path, carrying whatever OCR
-      // did find so a partial read is not lost.
-      return result(text.trim(), 'vision-pending', 'tesseract',
-        'OCR recovered little text; queue for attested vision interpretation');
+    const base = ocrImage(buf, ext, []);
+    readings = [{ mode: 'psm3', text: base, score: scoreLegibility(base) }];
+
+    // Pay for a second pass ONLY on the failing class: enough text to judge, and
+    // it does not read as words. --psm 1 runs tesseract's own orientation
+    // detection and rotates the page before recognition, so a sideways photo is
+    // recovered without an image rotator having to travel in the image. An
+    // upright screenshot never reaches here and costs exactly one pass.
+    if (judgeable(readings[0].score) && !legible(readings[0].score)) {
+      try {
+        const alt = ocrImage(buf, ext, ['--psm', '1']);
+        readings.push({ mode: 'psm1-osd', text: alt, score: scoreLegibility(alt) });
+      } catch (_) { /* the first reading stands */ }
     }
-    return result(text, 'scanned', 'tesseract');
   } catch (e) {
     if (e.code === 'ENOENT') return result('', 'unscanned', 'tesseract', 'tesseract-ocr not installed');
     return result('', 'unscanned', 'tesseract', 'tesseract failed: ' + (e.message || '').slice(0, 120));
   }
+
+  // Keep the reading with the most word-shaped tokens — NOT the most characters.
+  // On the rotated fixture the losing reading is the longer one.
+  const best = readings.reduce((a, b) => (b.score.words > a.score.words ? b : a));
+  const leg = { tokens: best.score.tokens, words: best.score.words, ratio: best.score.ratio,
+                mode: best.mode, ...(readings.length > 1 ? { retried: true } : {}) };
+  const attach = r => { r.legibility = leg; return r; };
+
+  if (alnumCount(best.text) < OCR_MIN_ALNUM) {
+    // Little or no text recovered — the diagram case. Admit the image and
+    // mark it for the operator-attested vision path, carrying whatever OCR
+    // did find so a partial read is not lost.
+    return attach(result(best.text.trim(), 'vision-pending', 'tesseract',
+      'OCR recovered little text; queue for attested vision interpretation'));
+  }
+  if (judgeable(best.score) && !legible(best.score)) {
+    // Plenty of characters, none of them words. This is the case that used to
+    // pass as content: abundant, confident and wrong. It is an unreadable image,
+    // not a scan, and it goes to the lane that already exists for that.
+    return attach(result(best.text.trim(), 'vision-pending', 'tesseract',
+      `OCR recovered ${alnumCount(best.text)} characters but only ${best.score.words} of ${best.score.tokens} ` +
+      `tokens read as words (ratio ${best.score.ratio}, floor ${OCR_MIN_WORD_RATIO}); ` +
+      'treated as an unreadable image rather than as content'));
+  }
+  return attach(result(best.text, 'scanned', 'tesseract'));
 }
 
 function extractXlsx(buf) {
@@ -191,4 +265,5 @@ const SUPPORTED = new Set([
   ...IMAGE_EXT,
 ]);
 
-module.exports = { extract, extractBuffer, SUPPORTED, IMAGE_EXT, OCR_MIN_ALNUM };
+module.exports = { extract, extractBuffer, SUPPORTED, IMAGE_EXT, OCR_MIN_ALNUM,
+                   scoreLegibility, OCR_MIN_TOKENS, OCR_MIN_WORD_RATIO };

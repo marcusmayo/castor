@@ -56,6 +56,53 @@ const run = () => silent(() => intake.runOnce());
     assert.ok(/attested vision/i.test(m.instructions));
   });
 
+  console.log('\n--- OCR legibility: character count is not content ---');
+  const textOf = suffix => {
+    const fl = flagsFor(suffix);
+    assert.ok(fl && fl.extraction.text_file, suffix + ': no extraction was persisted');
+    return fs.readFileSync(path.join(intake.INBOX, fl.extraction.text_file), 'utf8');
+  };
+  await t('a sideways image is read the right way up, not admitted as gibberish', async () => {
+    putFile('rot.png', path.join(FIX, 'rotated.png'));
+    putFile('bad.png', path.join(FIX, 'illegible.png'));
+    const r = await run();
+    assert.strictEqual(r.length, 2, JSON.stringify(r.map(x => [x.file, x.outcome])));
+    const fl = flagsFor('rot.png');
+    assert.strictEqual(fl.extraction.scan_state, 'scanned');
+    assert.strictEqual(fl.extraction.legibility.mode, 'psm1-osd', 'the re-read did not happen');
+    assert.ok(fl.extraction.legibility.retried, 'the sidecar must say the image was re-read');
+    assert.ok(/Outline of Coverage/i.test(textOf('rot.png')),
+      'the upright reading was not kept -- the extraction is still the sideways one');
+  });
+  await t('plenty of characters with no words is refused, not admitted as content', () => {
+    const fl = flagsFor('bad.png');
+    assert.strictEqual(fl.extraction.scan_state, 'vision-pending');
+    assert.strictEqual(fl.has_vision_pending, true);
+    // The point of the test: this file is NOT caught by the old length gate.
+    const extract = require(path.join(ROOT, 'scripts', 'extract.js'));
+    assert.ok(fl.extraction.chars > extract.OCR_MIN_ALNUM * 5,
+      'fixture no longer has abundant characters -- it would be caught by the length gate and prove nothing');
+    assert.ok(fl.extraction.legibility.ratio < extract.OCR_MIN_WORD_RATIO);
+    assert.ok(/read as words/i.test(fl.extraction.note), 'the reason must name legibility, not length');
+  });
+  await t('a legible image is read once -- the retry costs nothing on the good path', () => {
+    const fl = flagsFor('s.png');
+    assert.strictEqual(fl.extraction.scan_state, 'scanned');
+    assert.strictEqual(fl.extraction.legibility.mode, 'psm3');
+    assert.ok(!fl.extraction.legibility.retried, 'a readable image must not pay for a second OCR pass');
+  });
+  await t('every image sidecar records the legibility measure', () => {
+    const imgs = inboxFiles().filter(f => f.endsWith('.flags.json'))
+      .map(f => JSON.parse(fs.readFileSync(path.join(intake.INBOX, f), 'utf8')))
+      .filter(fl => fl.extraction && fl.extraction.extractor === 'tesseract');
+    assert.ok(imgs.length >= 4, 'expected at least four image items, saw ' + imgs.length);
+    for (const fl of imgs) {
+      const lg = fl.extraction.legibility;
+      assert.ok(lg && typeof lg.tokens === 'number' && typeof lg.words === 'number' && typeof lg.ratio === 'number',
+        fl.file + ': scanned no longer has to mean legible, so the measure must be on the record');
+    }
+  });
+
 
   console.log('\n--- email recursion ---');
   await t('eml admitted, body + attachments in flags', async () => {

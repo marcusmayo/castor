@@ -153,10 +153,10 @@ function admit(file, ex, tw) {
   const flags = {
     file: destName,
     admitted_at: new Date().toISOString(),
-    extraction: { type: path.extname(base).toLowerCase(), extractor: ex.extractor, chars: ex.chars, scan_state: ex.scanState, ...(ex.note ? { note: ex.note } : {}) },
+    extraction: { type: path.extname(base).toLowerCase(), extractor: ex.extractor, chars: ex.chars, scan_state: ex.scanState, ...(ex.legibility ? { legibility: ex.legibility } : {}), ...(ex.note ? { note: ex.note } : {}) },
     has_vision_pending: visionPending,
     has_unscanned: anyUnscanned(ex),
-    attachments: (ex.attachments || []).map(a => ({ name: a.name, scan_state: a.scanState, extractor: a.extractor, chars: a.chars, ...(a.note ? { note: a.note } : {}) })),
+    attachments: (ex.attachments || []).map(a => ({ name: a.name, scan_state: a.scanState, extractor: a.extractor, chars: a.chars, ...(a.legibility ? { legibility: a.legibility } : {}), ...(a.note ? { note: a.note } : {}) })),
     tripwire: { flagged: tw.flagged, config_error: tw.configError, scanned: !tw.configError, hits: tw.hits },
   };
   // Written BEFORE the sidecar is finalised so the sidecar can point at it, and so a file with
@@ -172,7 +172,7 @@ function admit(file, ex, tw) {
     writeSidecar(destName + '.vision-pending.json', {
       file: destName,
       targets,
-      reason: 'image OCR recovered little text; contents not scannable as text',
+      reason: ex.note || 'image OCR recovered little text; contents not scannable as text',
       instructions: 'Trigger attested vision interpretation from the webchat. Raw-image egress to the vision model requires explicit operator confirmation.',
     });
   }
