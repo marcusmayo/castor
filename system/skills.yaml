@@ -12,7 +12,10 @@ contract: 3
 # refused at boot. contract: 3 is required to take: an older vendored core reads up to 2 and
 # must REFUSE this file rather than accept it and mount without these nine.
 inventory:
+  - /queue
+  - /queue-clear
   - /run-audit-verify
+  - /run-capability-status
   - /run-check-auth
   - /run-check-backup
   - /run-check-net
@@ -22,20 +25,4 @@ inventory:
   - /run-check-vuln
   - /run-scan-tree
 
-skills:
-  - route: /queue
-    bin: node
-    args: [scripts/queue.js]
-    timeout: 15000
-    category: Intake
-  - route: /queue-clear
-    bin: node
-    args: [scripts/queue.js, archive, --all]
-    timeout: 20000
-    category: Intake
-  - route: /run-capability-status
-    bin: node
-    args: [scripts/setup-wizard.js, --status]
-    timeout: 30000
-    record: capability-status
-    category: Governance
+skills: []   # every skill this profile mounts is taken from the shared inventory
