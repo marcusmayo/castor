@@ -281,9 +281,14 @@ async function backfill(go, opts) {
   for (const f of sidecars) {
     let fl = null;
     try { fl = JSON.parse(fs.readFileSync(path.join(HOME, f), 'utf8')); } catch { fl = null; }
-    if (!fl || !fl.file || !fl.extraction) { results.push({ file: label + f, outcome: 'skipped', reason: 'sidecar unreadable or carries no extraction' }); continue; }
+    if (!fl || !fl.extraction) { results.push({ file: label + f, outcome: 'skipped', reason: 'sidecar unreadable or carries no extraction' }); continue; }
 
-    const dest = fl.file;
+    // The sidecar's NAME says which item it describes. The file field inside is
+    // only a claim, and queue-clear renames on collision without rewriting it,
+    // so the two can disagree. Trusting the field wrote the re-read to a
+    // filename that did not exist and left the sidecar that was actually read
+    // untouched -- two records, one question, and the stale one still answering.
+    const dest = f.slice(0, -'.flags.json'.length);
     const target = path.join(HOME, dest);
     if (!fs.existsSync(target)) { results.push({ file: label + dest, outcome: 'skipped', reason: 'the admitted file is not beside its sidecar' }); continue; }
 
@@ -306,6 +311,8 @@ async function backfill(go, opts) {
     flags.admitted_at = fl.admitted_at;                       // when it ARRIVED, not when it was re-read
     flags.backfilled_at = new Date().toISOString();
     flags.backfill = { was: before };
+    // Repair the self-description while we are here, and say we did.
+    if (fl.file && fl.file !== dest) flags.backfill.named_itself = fl.file;
 
     const txt = writeExtractedText(dest, ex, HOME);
     if (txt) { flags.extraction.text_file = txt.rel; flags.extraction.text_chars = txt.chars; if (txt.truncated) flags.extraction.text_truncated = true; }

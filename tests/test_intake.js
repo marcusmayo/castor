@@ -210,6 +210,33 @@ const run = () => silent(() => intake.runOnce());
     assert.ok(!admittedFiles().some(f => /rot\.png$/.test(f)),
       'a cleared item reappeared in the review queue -- the operator cleared it and that decision stands');
   });
+  await t('a sidecar renamed on collision is updated in place, not duplicated', async () => {
+    // queue-clear renames on collision and moves the sidecar under the new name
+    // WITHOUT rewriting the file field inside it. Reproduce that exactly.
+    const src = flagsFor('bad.png');
+    const orig = src.file;
+    const renamed = '1788208950090-' + orig;
+    for (const [a, b] of [[orig, renamed], [orig + '.flags.json', renamed + '.flags.json']]) {
+      fs.renameSync(path.join(intake.INBOX, a), path.join(intake.ARCHIVE, b));
+    }
+    const moved = JSON.parse(fs.readFileSync(path.join(intake.ARCHIVE, renamed + '.flags.json'), 'utf8'));
+    assert.strictEqual(moved.file, orig, 'fixture setup: the field must still name the OLD name');
+    moved.extraction.chars = 1;                       // make it look stale so a rewrite is due
+    fs.writeFileSync(path.join(intake.ARCHIVE, renamed + '.flags.json'), JSON.stringify(moved, null, 2) + '\n');
+
+    const before = fs.readdirSync(intake.ARCHIVE).filter(x => x.endsWith('.flags.json')).length;
+    const r = await silent(() => intake.backfill(true, { archive: true }));
+    const after = fs.readdirSync(intake.ARCHIVE).filter(x => x.endsWith('.flags.json')).length;
+
+    assert.strictEqual(after, before, 'the re-read created a second record instead of updating the one it read');
+    assert.ok(!fs.existsSync(path.join(intake.ARCHIVE, orig + '.flags.json')),
+      'a sidecar was written under the name the stale field claimed');
+    const fixed = JSON.parse(fs.readFileSync(path.join(intake.ARCHIVE, renamed + '.flags.json'), 'utf8'));
+    assert.ok(fixed.backfilled_at, 'the sidecar that was read was not the one that was written');
+    assert.strictEqual(fixed.file, renamed, 'the record must name itself correctly after the repair');
+    assert.strictEqual(fixed.backfill.named_itself, orig, 'the repair must be on the record, not silent');
+    assert.ok(r.some(x => x.file === 'archive/' + renamed));
+  });
 
   console.log('\n--- email recursion ---');
   await t('eml admitted, body + attachments in flags', async () => {
