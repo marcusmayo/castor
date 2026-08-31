@@ -86,7 +86,12 @@ function t(n,fn){return Promise.resolve().then(fn).then(()=>{pass++;console.log(
     const body = JSON.parse(cap[0].opts.body);
     assert.strictEqual(body.messages[0].content[0].type,'image');
     assert.ok(body.messages[0].content[0].source.data.length>0);
-    assert.ok(/Describe the structure/.test(body.messages[0].content[1].text));
+    const prompt = body.messages[0].content[1].text;
+    // The prompt is load-bearing for accuracy: a table read without row discipline
+    // comes back with its cells shifted, and a model told to fill gaps will.
+    assert.ok(/row by row/i.test(prompt), 'the prompt must ask for row-by-row transcription');
+    assert.ok(/not legible/i.test(prompt), 'the prompt must ask it to say what it cannot read');
+    assert.ok(/exactly as written/i.test(prompt), 'the prompt must forbid re-spelling names');
   });
   await t('api error surfaces and is audited', async () => {
     const audits=[];
@@ -94,6 +99,42 @@ function t(n,fn){return Promise.resolve().then(fn).then(()=>{pass++;console.log(
     const r = await pending.interpret(tmp, realImg, goodSha, { fetch:errFetch, audit:e=>audits.push(e), apiKey:'k' });
     assert.strictEqual(r.ok,false); assert.ok(/502/.test(r.error));
     assert.ok(audits.some(a=>a.status==='API_ERROR'));
+  });
+
+  console.log('\n--- what actually egresses ---');
+  const sentData = cap => JSON.parse(cap[0].opts.body).messages[0].content[0].source.data;
+  const exifImg = '2026-07-25_p.jpg';
+  fs.copyFileSync(path.join(__dirname, 'fixtures', 'exif-sideways.jpg'), path.join(inbox, exifImg));
+  const exifBuf = fs.readFileSync(path.join(inbox, exifImg));
+  const exifSha = crypto.createHash('sha256').update(exifBuf).digest('hex');
+
+  await t('a sideways photograph is turned upright BEFORE it leaves the VM', async () => {
+    const audits=[]; const cap=[];
+    const r = await pending.interpret(tmp, exifImg, exifSha, { fetch:mockFetch(cap), audit:e=>audits.push(e), apiKey:'k' });
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(cap.length, 1);
+    const sent = Buffer.from(sentData(cap), 'base64');
+    assert.notStrictEqual(sent.toString('base64'), exifBuf.toString('base64'),
+      'the stored sideways bytes were sent -- the vision model reads a rotated page');
+    assert.strictEqual(JSON.parse(cap[0].opts.body).messages[0].content[0].source.media_type, 'image/png');
+  });
+  await t('the audit records the attested hash AND the hash of what actually went', () => {
+    // re-run to inspect the audit for this image
+    return pending.interpret(tmp, exifImg, exifSha, { fetch:mockFetch([]), audit:e=>{
+      if (e.status !== 'SENT') return;
+      assert.strictEqual(e.sha256, exifSha, 'the attested hash must still be the file the operator confirmed');
+      assert.strictEqual(e.transform, 'exif-orientation-6');
+      assert.ok(e.sent_sha256 && e.sent_sha256.length === 64 && e.sent_sha256 !== exifSha,
+        'a transformed image is a different artifact and the record must say which one left');
+    }, apiKey:'k' });
+  });
+  await t('an untransformed image sends the exact attested bytes and claims no transform', async () => {
+    const audits=[]; const cap=[];
+    await pending.interpret(tmp, realImg, goodSha, { fetch:mockFetch(cap), audit:e=>audits.push(e), apiKey:'k' });
+    const sent = Buffer.from(sentData(cap), 'base64');
+    assert.strictEqual(sent.toString('base64'), buf.toString('base64'), 'bytes must be untouched when nothing is applied');
+    const s = audits.find(a=>a.status==='SENT');
+    assert.ok(!s.transform && !s.sent_sha256, 'no transform means no second hash on the record');
   });
 
   console.log(`\nPENDING PANEL: ${pass} passed, ${fail.length} failed`);

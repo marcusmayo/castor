@@ -13,8 +13,10 @@
  */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const extract = require('../scripts/extract.js');
 
 const IMG_RE = /^[0-9a-zA-Z._-]+\.(png|jpg|jpeg|webp|gif|tif|tiff|bmp)$/i;
 
@@ -91,7 +93,27 @@ async function interpret(agentRoot, name, attestedSha, deps) {
     return { ok: false, error: 'vision API key not configured (set VISION_API_KEY)' };
   }
 
-  const ext = path.extname(file).toLowerCase();
+  // A phone records which way up a picture is in EXIF and stores the pixels
+  // sideways. A vision model handed the stored pixels reads a rotated page --
+  // which is how a table comes back with its rows and columns misaligned.
+  // Normalise before sending.
+  //
+  // The operator attested the FILE, and the hash check above is unchanged. What
+  // changes is that when a transform is applied the bytes that leave are not the
+  // bytes attested, so the audit records BOTH: the attested hash and the hash of
+  // what actually went. The record never claims they were the same.
+  let sendBuf = buf;
+  let sendExt = path.extname(file).toLowerCase();
+  let transform = null;
+  const oriented = extract.orientFile(file, path.join(os.tmpdir(), 'castor-vis-' + crypto.randomBytes(6).toString('hex') + '.png'));
+  if (oriented) {
+    try { sendBuf = fs.readFileSync(oriented.path); sendExt = '.png'; transform = oriented.transform; }
+    catch (_) { sendBuf = buf; sendExt = path.extname(file).toLowerCase(); transform = null; }
+    try { fs.unlinkSync(oriented.path); } catch (_) {}
+  }
+  const sentSha = crypto.createHash('sha256').update(sendBuf).digest('hex');
+
+  const ext = sendExt;
   const mediaType = ext === '.png' ? 'image/png'
     : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg'
     : ext === '.webp' ? 'image/webp'
@@ -101,7 +123,8 @@ async function interpret(agentRoot, name, attestedSha, deps) {
 
   // Audit the egress BEFORE the call — the attempt is recorded whether or not
   // it returns.
-  audit({ action: 'RAW_IMAGE', status: 'SENT', redaction: 'ATTESTED_EGRESS', model, sha256: actualSha, attestation: 'operator-confirmed' });
+  audit({ action: 'RAW_IMAGE', status: 'SENT', redaction: 'ATTESTED_EGRESS', model, sha256: actualSha,
+          ...(transform ? { transform, sent_sha256: sentSha } : {}), attestation: 'operator-confirmed' });
 
   let resp;
   try {
@@ -109,10 +132,10 @@ async function interpret(agentRoot, name, attestedSha, deps) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
-        model, max_tokens: 1500,
+        model, max_tokens: 4000,
         messages: [{ role: 'user', content: [
-          { type: 'image', source: { type: 'base64', media_type: mediaType, data: buf.toString('base64') } },
-          { type: 'text', text: 'Describe the structure of this diagram or image in plain text. If it shows a flow, process, hierarchy, or relationships, lay out the components and how they connect. Be concise and factual; do not invent labels that are not legible.' },
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: sendBuf.toString('base64') } },
+          { type: 'text', text: 'Transcribe this image faithfully. If it contains a table, reproduce it row by row and keep each row\'s cells with that row -- never carry a value from one row into a neighbouring one. If it contains a conversation, give each message with its sender. If it shows a flow, hierarchy or relationships, lay out the components and how they connect. Copy labels and names exactly as written, including spelling. Where text is not legible, say so for that item instead of inferring it. Add nothing that is not visible in the image.' },
         ] }],
       }),
     });

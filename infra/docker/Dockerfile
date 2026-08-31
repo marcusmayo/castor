@@ -9,9 +9,9 @@
 # from infra/versions.lock). Image = code, immutable; state = volumes.
 #
 # Differs from Keel: three npm install locations (repo root, gate, webchat),
-# and the runtime adds poppler-utils + tesseract-ocr + gzip that Castor's
-# intake and log-rotate actually use. No Python pip deps (sunday-maintenance.py
-# is stdlib-only).
+# and the runtime adds poppler-utils + tesseract-ocr + python3-pil + gzip that
+# Castor's intake and log-rotate actually use. No Python PIP deps; python3-pil
+# is an apt package (sunday-maintenance.py remains stdlib-only).
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
@@ -22,10 +22,13 @@ ARG CLAUDE_CODE_VERSION
 ARG TARGETARCH
 
 # Runtime system deps. poppler-utils=pdftotext, tesseract-ocr=image OCR (both
-# used by the intake extraction lane), gzip=log-rotate. xz-utils extracts the
+# used by the intake extraction lane), python3-pil=orientation normalisation
+# (scripts/orient.py: tesseract ignores EXIF and reads a phone photograph
+# sideways, so the picture is turned the right way up before anything -- OCR or
+# the attested vision path -- reads it), gzip=log-rotate. xz-utils extracts the
 # Node tarball.
 RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      ca-certificates curl xz-utils python3 poppler-utils tesseract-ocr gzip \
+      ca-certificates curl xz-utils python3 python3-pil poppler-utils tesseract-ocr gzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Node: official tarball, SHA256-verified against versions.lock (fail-loud).

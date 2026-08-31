@@ -106,39 +106,70 @@ function extractPdf(buf) {
   }
 }
 
-function ocrImage(buf, ext, args) {
-  return runBinaryOnBuffer(buf, ext, tmp =>
-    execFileSync('tesseract', [tmp, 'stdout', '-l', 'eng', ...args],
-                 { encoding: 'utf8', timeout: 60000, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }));
+// orient.py normalises orientation. Kept out of this file because it needs an
+// imaging library; kept OPTIONAL because the image may not carry one, in which
+// case every call below returns null and extraction behaves as it did before.
+const ORIENT_PY = path.join(__dirname, 'orient.py');
+
+function orient(inPath, outPath, deg) {
+  try {
+    const args = [ORIENT_PY, inPath, outPath];
+    if (deg) args.push(String(deg));
+    const out = execFileSync('python3', args,
+      { encoding: 'utf8', timeout: 20000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (!out || out === 'none') return null;
+    return { path: outPath, transform: out };
+  } catch (_) { return null; }
+}
+
+function ocrFile(file) {
+  return execFileSync('tesseract', [file, 'stdout', '-l', 'eng'],
+                      { encoding: 'utf8', timeout: 60000, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
 }
 
 function extractImage(buf, ext) {
+  const stem = path.join(os.tmpdir(), 'castor-x-' + crypto.randomBytes(6).toString('hex'));
+  const src = stem + (ext || '.png');
+  const temps = [src];
+  const read = c => { const text = ocrFile(c.path); return { ...c, text, score: scoreLegibility(text) }; };
   let readings;
-  try {
-    const base = ocrImage(buf, ext, []);
-    readings = [{ mode: 'psm3', text: base, score: scoreLegibility(base) }];
 
-    // Pay for a second pass ONLY on the failing class: enough text to judge, and
-    // it does not read as words. --psm 1 runs tesseract's own orientation
-    // detection and rotates the page before recognition, so a sideways photo is
-    // recovered without an image rotator having to travel in the image. An
-    // upright screenshot never reaches here and costs exactly one pass.
+  try {
+    fs.writeFileSync(src, buf, { mode: 0o600 });
+
+    // A camera records which way up the picture is; tesseract ignores it and
+    // reads the stored pixels. Believe the tag before guessing — EXIF is the
+    // device stating a fact, an orientation search is only an inference.
+    const exif = orient(src, stem + '-exif.png');
+    if (exif) temps.push(exif.path);
+    const primary = exif || { path: src, transform: null };
+    readings = [read(primary)];
+
+    // Search only when there is enough text to judge and it does not read as
+    // words. An upright screenshot never reaches here and costs one OCR pass.
     if (judgeable(readings[0].score) && !legible(readings[0].score)) {
-      try {
-        const alt = ocrImage(buf, ext, ['--psm', '1']);
-        readings.push({ mode: 'psm1-osd', text: alt, score: scoreLegibility(alt) });
-      } catch (_) { /* the first reading stands */ }
+      for (const deg of [90, 180, 270]) {
+        const r = orient(primary.path, stem + '-r' + deg + '.png', deg);
+        if (!r) break;                                  // no imaging library
+        temps.push(r.path);
+        const t = primary.transform ? primary.transform + '+' + r.transform : r.transform;
+        readings.push(read({ path: r.path, transform: t }));
+        if (legible(readings[readings.length - 1].score)) break;
+      }
     }
   } catch (e) {
     if (e.code === 'ENOENT') return result('', 'unscanned', 'tesseract', 'tesseract-ocr not installed');
     return result('', 'unscanned', 'tesseract', 'tesseract failed: ' + (e.message || '').slice(0, 120));
+  } finally {
+    for (const f of temps) { try { fs.unlinkSync(f); } catch (_) {} }
   }
 
   // Keep the reading with the most word-shaped tokens — NOT the most characters.
-  // On the rotated fixture the losing reading is the longer one.
+  // On a sideways photograph the losing reading is often the longer one.
   const best = readings.reduce((a, b) => (b.score.words > a.score.words ? b : a));
   const leg = { tokens: best.score.tokens, words: best.score.words, ratio: best.score.ratio,
-                mode: best.mode, ...(readings.length > 1 ? { retried: true } : {}) };
+                ...(best.transform ? { transform: best.transform } : {}),
+                ...(readings.length > 1 ? { orientations_tried: readings.length } : {}) };
   const attach = r => { r.legibility = leg; return r; };
 
   if (alnumCount(best.text) < OCR_MIN_ALNUM) {
@@ -149,9 +180,9 @@ function extractImage(buf, ext) {
       'OCR recovered little text; queue for attested vision interpretation'));
   }
   if (judgeable(best.score) && !legible(best.score)) {
-    // Plenty of characters, none of them words. This is the case that used to
-    // pass as content: abundant, confident and wrong. It is an unreadable image,
-    // not a scan, and it goes to the lane that already exists for that.
+    // Plenty of characters, none of them words, and no orientation fixed it.
+    // This is the case that used to pass as content: abundant, confident and
+    // wrong. It is an unreadable image, and it goes to the lane for those.
     return attach(result(best.text.trim(), 'vision-pending', 'tesseract',
       `OCR recovered ${alnumCount(best.text)} characters but only ${best.score.words} of ${best.score.tokens} ` +
       `tokens read as words (ratio ${best.score.ratio}, floor ${OCR_MIN_WORD_RATIO}); ` +
@@ -266,4 +297,4 @@ const SUPPORTED = new Set([
 ]);
 
 module.exports = { extract, extractBuffer, SUPPORTED, IMAGE_EXT, OCR_MIN_ALNUM,
-                   scoreLegibility, OCR_MIN_TOKENS, OCR_MIN_WORD_RATIO };
+                   scoreLegibility, orientFile: orient, OCR_MIN_TOKENS, OCR_MIN_WORD_RATIO };
