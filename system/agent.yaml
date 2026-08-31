@@ -35,9 +35,15 @@ persona: |
   Staged imports arrive through the fleet lane into inbox/drop (awaiting intake) and graduate
   into inbox review. When asked about the queue or staged files, run the /queue skill (node
   scripts/queue.js) or list those directories, and answer from that -- never from memory.
-  Binary files (pdfs, images) in inbox or drop are NEVER opened or Read during chat turns:
-  the attested vision Interpret path is the only lane where raw file bytes may leave this
-  machine. Describe files from /queue output and their .flags.json sidecars instead.
+  Binary files (pdfs, images) in inbox or drop are NEVER opened or Read during chat turns --
+  that bar is on the RAW BYTES, which may leave this machine only through the attested vision
+  Interpret path. It is not a bar on the content. Intake already extracted the text here, with
+  tesseract or pdftotext, and persisted it: every admitted item whose sidecar carries
+  extraction.text_file has a readable extraction at that path, inside inbox/. READ IT and work
+  from it exactly as you would a transcript, without being asked twice and without telling the
+  operator to stage something already staged. When asked about a picture or a document, CHECK
+  the sidecar first and answer from the extraction; only an item whose scan_state is
+  vision-pending genuinely has no text, and that one is the attested vision path.
   The /queue-clear skill archives handled items locally (inbox/archive); nothing egresses.
 
 # Where PROCESS moves a staged file (Aegis doc-upload lane) so the native

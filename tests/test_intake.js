@@ -19,7 +19,7 @@ const drop = f => path.join(intake.DROP, f);
 function putFile(name, srcAbs) { fs.mkdirSync(intake.DROP, { recursive: true }); fs.copyFileSync(srcAbs, drop(name)); }
 function putText(name, content) { fs.mkdirSync(intake.DROP, { recursive: true }); fs.writeFileSync(drop(name), content); }
 const inboxFiles = () => fs.readdirSync(intake.INBOX).filter(f => fs.statSync(path.join(intake.INBOX, f)).isFile());
-const admittedFiles = () => inboxFiles().filter(f => !f.endsWith('.flags.json') && !f.endsWith('.vision-pending.json'));
+const admittedFiles = () => inboxFiles().filter(f => !f.startsWith('.') && !f.endsWith('.flags.json') && !f.endsWith('.vision-pending.json'));
 const quar = () => fs.readdirSync(intake.QUARANTINE).filter(f => !f.endsWith('.reason.txt'));
 function flagsFor(destSuffix) { const f = inboxFiles().find(x => x.endsWith(destSuffix + '.flags.json')); return f ? JSON.parse(fs.readFileSync(path.join(intake.INBOX, f), 'utf8')) : null; }
 function silent(fn) { const o = console.log; console.log = () => {}; const r = fn(); if (r && r.then) return r.finally(() => { console.log = o; }); console.log = o; return r; }
@@ -154,6 +154,42 @@ const run = () => silent(() => intake.runOnce());
     const leak = flagsFor('leak.csv');
     assert.ok(typeof leak.tripwire.hits[0].location === 'number');
     assert.ok(!JSON.stringify(leak).includes('budget for'), 'matched text must not be stored');
+  });
+
+  console.log('\n--- the extraction survives intake ---');
+  await t('every SCANNED item carries a readable extraction', () => {
+    const scanned = inboxFiles().filter(f => f.endsWith('.flags.json'))
+      .map(f => JSON.parse(fs.readFileSync(path.join(intake.INBOX, f), 'utf8')))
+      .filter(fl => fl.extraction && fl.extraction.scan_state === 'scanned');
+    assert.ok(scanned.length > 0, 'no scanned items to check -- the fixture set changed');
+    for (const fl of scanned) {
+      assert.ok(fl.extraction.text_file, fl.file + ': text was extracted and thrown away');
+      const abs = path.join(intake.INBOX, fl.extraction.text_file);
+      assert.ok(fs.existsSync(abs), fl.file + ': sidecar points at a file that is not there');
+      assert.ok(fs.readFileSync(abs, 'utf8').length > 0, fl.file + ': the extraction is empty');
+    }
+  });
+  await t('the extraction is invisible to the review queue', () => {
+    assert.ok(!admittedFiles().some(f => f.startsWith('.')),
+      'a dot entry in the admitted listing would be counted as a second item by fleet-core queue.js');
+    const fl = inboxFiles().filter(f => f.endsWith('.flags.json'))
+      .map(f => JSON.parse(fs.readFileSync(path.join(intake.INBOX, f), 'utf8')))
+      .find(x => x.extraction && x.extraction.text_file);
+    assert.ok(fl.extraction.text_file.startsWith('.'), 'the extraction must live in a dot directory');
+  });
+  await t('the extraction is 0600, like every other sidecar', () => {
+    const fl = inboxFiles().filter(f => f.endsWith('.flags.json'))
+      .map(f => JSON.parse(fs.readFileSync(path.join(intake.INBOX, f), 'utf8')))
+      .find(x => x.extraction && x.extraction.text_file);
+    const mode = fs.statSync(path.join(intake.INBOX, fl.extraction.text_file)).mode & 0o777;
+    assert.strictEqual(mode.toString(8), '600');
+  });
+  await t('the sidecar gains a POINTER, never the content', () => {
+    for (const f of inboxFiles().filter(x => x.endsWith('.flags.json'))) {
+      const raw = fs.readFileSync(path.join(intake.INBOX, f), 'utf8');
+      assert.ok(!raw.includes('Roadmap review') && !raw.includes('AKIAIOSFODNN7EXAMPLE'),
+        'content leaked into ' + f + ' via the extraction change');
+    }
   });
 
   console.log(`\nINTAKE LANE: ${pass} passed, ${fail.length} failed`);

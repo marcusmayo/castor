@@ -105,6 +105,34 @@ function writeSidecar(destBase, obj) {
   fs.writeFileSync(path.join(INBOX, destBase), JSON.stringify(obj, null, 2) + '\n', { mode: 0o600 });
 }
 
+// The extracted text was scanned for tripwires and then DISCARDED. An admitted pdf, docx, xlsx,
+// eml or image therefore left the agent holding a binary it may not open and no text to read --
+// while the sidecar recorded chars:N, stating that the content had been recovered and thrown
+// away. Persist it. Nothing egresses: tesseract and pdftotext already ran on this machine, and
+// this file never leaves it.
+//
+// It lives in a DOT directory because inbox/ is enumerated as the review queue: fleet-core
+// queue.js skips dot-prefixed entries, so a sibling .txt would have been counted as a second
+// admitted item for every file. -> the sidecar-relative path, or null
+const TEXT_DIR = '.text';
+const TEXT_MAX = 2 * 1024 * 1024;
+function writeExtractedText(destName, ex) {
+  const parts = [];
+  if (ex.text) parts.push(String(ex.text));
+  for (const a of ex.attachments || []) {
+    if (a.text) parts.push('\n\n----- attachment: ' + a.name + ' -----\n' + String(a.text));
+  }
+  let body = parts.join('');
+  if (!body.trim()) return null;
+  let truncated = false;
+  if (body.length > TEXT_MAX) { body = body.slice(0, TEXT_MAX); truncated = true; }
+  const dir = path.join(INBOX, TEXT_DIR);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const rel = TEXT_DIR + '/' + destName + '.txt';
+  fs.writeFileSync(path.join(INBOX, rel), body + (truncated ? '\n\n[truncated at ' + TEXT_MAX + ' characters]\n' : ''), { mode: 0o600 });
+  return { rel, truncated, chars: body.length };
+}
+
 function quarantine(file, reason, detail) {
   const base = safeName(path.basename(file));
   const dest = path.join(QUARANTINE, `${stamp()}_${base}`);
@@ -131,6 +159,10 @@ function admit(file, ex, tw) {
     attachments: (ex.attachments || []).map(a => ({ name: a.name, scan_state: a.scanState, extractor: a.extractor, chars: a.chars, ...(a.note ? { note: a.note } : {}) })),
     tripwire: { flagged: tw.flagged, config_error: tw.configError, scanned: !tw.configError, hits: tw.hits },
   };
+  // Written BEFORE the sidecar is finalised so the sidecar can point at it, and so a file with
+  // no recoverable text simply carries no pointer rather than a pointer to nothing.
+  const txt = writeExtractedText(destName, ex);
+  if (txt) { flags.extraction.text_file = txt.rel; flags.extraction.text_chars = txt.chars; if (txt.truncated) flags.extraction.text_truncated = true; }
   writeSidecar(destName + '.flags.json', flags);
 
   if (visionPending) {
@@ -223,7 +255,7 @@ function status() {
   const countFiles = (d, suffix) => { try { return fs.readdirSync(d).filter(f => (suffix ? f.endsWith(suffix) : true) && fs.statSync(path.join(d, f)).isFile()).length; } catch { return 0; } };
   const ledger = loadLedger();
   const inboxFiles = (() => { try { return fs.readdirSync(INBOX).filter(f => fs.statSync(path.join(INBOX, f)).isFile()); } catch { return []; } })();
-  const admitted = inboxFiles.filter(f => !f.endsWith('.flags.json') && !f.endsWith('.vision-pending.json')).length;
+  const admitted = inboxFiles.filter(f => !f.startsWith('.') && !f.endsWith('.flags.json') && !f.endsWith('.vision-pending.json')).length;
   const flagged = inboxFiles.filter(f => f.endsWith('.flags.json')).reduce((n, f) => { try { return n + (JSON.parse(fs.readFileSync(path.join(INBOX, f), 'utf8')).tripwire.flagged ? 1 : 0); } catch { return n; } }, 0);
   const vision = inboxFiles.filter(f => f.endsWith('.vision-pending.json')).length;
   console.log('');

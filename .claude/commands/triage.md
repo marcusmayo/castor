@@ -15,13 +15,17 @@ every state write happens only after explicit operator confirmation.
 
 ## Procedure
 1. List admitted files in `inbox/` (ignore `archive/`, `quarantine/`, `drop/`,
-   and the `.flags.json` / `.vision-pending.json` sidecars themselves).
+   the `.text/` directory, and the `.flags.json` / `.vision-pending.json`
+   sidecars themselves).
 2. For each file, read its `.flags.json` and branch on `extraction.scan_state`:
    - `vision-pending`: SKIP for now. It has no usable text until interpreted.
      Report it as "awaiting vision interpretation" and leave it in `inbox/`.
    - `unscanned`: report that it could not be read as text; do not guess its
      contents. Leave it for the operator.
-   - `scanned`: proceed to classify.
+   - `scanned`: proceed to classify. If `extraction.text_file` is set, READ that
+     file for the contents -- it is the extraction intake already made, and for a
+     pdf, docx, xlsx, eml or image it is the ONLY readable form. Do not open the
+     binary itself.
 3. If `tripwire.flagged` is true, note the flag in your summary for that item.
    Do not quote the flagged content back; the egress gate governs what the
    model may emit.
