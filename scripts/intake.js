@@ -32,7 +32,8 @@
  *   node scripts/intake.js --watch    poll loop
  *   node scripts/intake.js --status   counts and queues
  *   node scripts/intake.js --backfill re-read admitted items with the current
- *                                     extractor (plan; --go to apply)
+ *                                     extractor (plan; --archive to include
+ *                                     cleared items; --go to apply)
  */
 
 const fs = require('fs');
@@ -103,8 +104,8 @@ function anyUnscanned(ex) {
   return (ex.attachments || []).some(a => a.scanState === 'unscanned');
 }
 
-function writeSidecar(destBase, obj) {
-  fs.writeFileSync(path.join(INBOX, destBase), JSON.stringify(obj, null, 2) + '\n', { mode: 0o600 });
+function writeSidecar(destBase, obj, base) {
+  fs.writeFileSync(path.join(base || INBOX, destBase), JSON.stringify(obj, null, 2) + '\n', { mode: 0o600 });
 }
 
 // The extracted text was scanned for tripwires and then DISCARDED. An admitted pdf, docx, xlsx,
@@ -118,7 +119,8 @@ function writeSidecar(destBase, obj) {
 // admitted item for every file. -> the sidecar-relative path, or null
 const TEXT_DIR = '.text';
 const TEXT_MAX = 2 * 1024 * 1024;
-function writeExtractedText(destName, ex) {
+function writeExtractedText(destName, ex, base) {
+  const home = base || INBOX;
   const parts = [];
   if (ex.text) parts.push(String(ex.text));
   for (const a of ex.attachments || []) {
@@ -128,10 +130,10 @@ function writeExtractedText(destName, ex) {
   if (!body.trim()) return null;
   let truncated = false;
   if (body.length > TEXT_MAX) { body = body.slice(0, TEXT_MAX); truncated = true; }
-  const dir = path.join(INBOX, TEXT_DIR);
+  const dir = path.join(home, TEXT_DIR);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const rel = TEXT_DIR + '/' + destName + '.txt';
-  fs.writeFileSync(path.join(INBOX, rel), body + (truncated ? '\n\n[truncated at ' + TEXT_MAX + ' characters]\n' : ''), { mode: 0o600 });
+  fs.writeFileSync(path.join(home, rel), body + (truncated ? '\n\n[truncated at ' + TEXT_MAX + ' characters]\n' : ''), { mode: 0o600 });
   return { rel, truncated, chars: body.length };
 }
 
@@ -160,8 +162,9 @@ function buildFlags(destName, ex, tw) {
 // Write the vision-pending marker, or clear it when the item no longer needs
 // one. Called on admission AND on backfill, because a re-read can move an item
 // off the vision path as easily as onto it.
-function syncVisionMarker(destName, ex) {
-  const marker = path.join(INBOX, destName + '.vision-pending.json');
+function syncVisionMarker(destName, ex, base) {
+  const home = base || INBOX;
+  const marker = path.join(home, destName + '.vision-pending.json');
   if (!anyVisionPending(ex)) { try { fs.unlinkSync(marker); } catch (_) {} return false; }
   const targets = [];
   if (ex.scanState === 'vision-pending') targets.push('<self>');
@@ -171,7 +174,7 @@ function syncVisionMarker(destName, ex) {
     targets,
     reason: ex.note || 'image OCR recovered little text; contents not scannable as text',
     instructions: 'Trigger attested vision interpretation from the webchat. Raw-image egress to the vision model requires explicit operator confirmation.',
-  });
+  }, home);
   return true;
 }
 
@@ -254,26 +257,39 @@ async function processOne(file, ledger) {
 // re-read that recovers real text from what used to be gibberish is exactly the
 // case where a term could appear that nothing has ever looked at.
 //
-//   node scripts/intake.js --backfill        plan only, writes nothing
-//   node scripts/intake.js --backfill --go   apply
-async function backfill(go) {
+// A cleared item lives in inbox/archive, and queue-clear moves its .flags.json
+// there with it, so an archived item is self-contained and can be re-read in
+// place. --archive includes them. Re-reading NEVER puts an item back in the
+// review queue: it was reviewed and cleared, and that decision is the
+// operator's. Only the record and the extraction are corrected. Duplicates and
+// interpretation files in the archive carry no sidecar and are skipped without
+// needing to be named.
+//
+//   node scripts/intake.js --backfill              plan only, writes nothing
+//   node scripts/intake.js --backfill --go         apply, inbox only
+//   node scripts/intake.js --backfill --archive    include cleared items
+async function backfill(go, opts) {
   ensureDirs();
-  let sidecars = [];
-  try { sidecars = fs.readdirSync(INBOX).filter(f => f.endsWith('.flags.json')).sort(); } catch { sidecars = []; }
+  const dirs = [{ dir: INBOX, label: '' }];
+  if (opts && opts.archive) dirs.push({ dir: ARCHIVE, label: 'archive/' });
 
   const results = [];
+  for (const { dir: HOME, label } of dirs) {
+  let sidecars = [];
+  try { sidecars = fs.readdirSync(HOME).filter(f => f.endsWith('.flags.json')).sort(); } catch { sidecars = []; }
+
   for (const f of sidecars) {
     let fl = null;
-    try { fl = JSON.parse(fs.readFileSync(path.join(INBOX, f), 'utf8')); } catch { fl = null; }
-    if (!fl || !fl.file || !fl.extraction) { results.push({ file: f, outcome: 'skipped', reason: 'sidecar unreadable or carries no extraction' }); continue; }
+    try { fl = JSON.parse(fs.readFileSync(path.join(HOME, f), 'utf8')); } catch { fl = null; }
+    if (!fl || !fl.file || !fl.extraction) { results.push({ file: label + f, outcome: 'skipped', reason: 'sidecar unreadable or carries no extraction' }); continue; }
 
     const dest = fl.file;
-    const target = path.join(INBOX, dest);
-    if (!fs.existsSync(target)) { results.push({ file: dest, outcome: 'skipped', reason: 'the admitted file is no longer in inbox' }); continue; }
+    const target = path.join(HOME, dest);
+    if (!fs.existsSync(target)) { results.push({ file: label + dest, outcome: 'skipped', reason: 'the admitted file is not beside its sidecar' }); continue; }
 
     let ex;
     try { ex = await extract(target); }
-    catch (e) { results.push({ file: dest, outcome: 'skipped', reason: 'extractor threw: ' + (e.message || '').slice(0, 80) }); continue; }
+    catch (e) { results.push({ file: label + dest, outcome: 'skipped', reason: 'extractor threw: ' + (e.message || '').slice(0, 80) }); continue; }
 
     const before = { scan_state: fl.extraction.scan_state, chars: fl.extraction.chars,
                      extractor: fl.extraction.extractor, has_text: !!fl.extraction.text_file };
@@ -282,8 +298,8 @@ async function backfill(go) {
     const changed = before.scan_state !== after.scan_state || before.chars !== after.chars
                  || before.extractor !== after.extractor || before.has_text !== after.has_text;
 
-    if (!changed) { results.push({ file: dest, outcome: 'unchanged', before, after }); continue; }
-    if (!go) { results.push({ file: dest, outcome: 'would-rewrite', before, after }); continue; }
+    if (!changed) { results.push({ file: label + dest, outcome: 'unchanged', before, after }); continue; }
+    if (!go) { results.push({ file: label + dest, outcome: 'would-rewrite', before, after }); continue; }
 
     const tw = classifyTripwire(ex);
     const flags = buildFlags(dest, ex, tw);
@@ -291,17 +307,18 @@ async function backfill(go) {
     flags.backfilled_at = new Date().toISOString();
     flags.backfill = { was: before };
 
-    const txt = writeExtractedText(dest, ex);
+    const txt = writeExtractedText(dest, ex, HOME);
     if (txt) { flags.extraction.text_file = txt.rel; flags.extraction.text_chars = txt.chars; if (txt.truncated) flags.extraction.text_truncated = true; }
-    else if (fl.extraction.text_file) { try { fs.unlinkSync(path.join(INBOX, fl.extraction.text_file)); } catch (_) {} }
-    writeSidecar(dest + '.flags.json', flags);
-    syncVisionMarker(dest, ex);
+    else if (fl.extraction.text_file) { try { fs.unlinkSync(path.join(HOME, fl.extraction.text_file)); } catch (_) {} }
+    writeSidecar(dest + '.flags.json', flags, HOME);
+    syncVisionMarker(dest, ex, HOME);
 
-    record({ action: 'INTAKE', status: 'BACKFILLED', file: dest,
+    record({ action: 'INTAKE', status: 'BACKFILLED', file: label + dest,
              from_scan: before.scan_state, to_scan: after.scan_state,
              extractor: ex.extractor, chars_before: before.chars, chars_after: after.chars,
              flagged: tw.flagged, config_error: tw.configError });
-    results.push({ file: dest, outcome: 'rewritten', before, after, flagged: tw.flagged });
+    results.push({ file: label + dest, outcome: 'rewritten', before, after, flagged: tw.flagged });
+  }
   }
 
   const n = o => results.filter(r => r.outcome === o).length;
@@ -315,7 +332,7 @@ async function backfill(go) {
     console.log(`  ${r.outcome.padEnd(14)} ${r.file}  [${move}] ${chars}${text}${r.flagged ? '  FLAGGED' : ''}`);
   }
   console.log(`  unchanged ${n('unchanged')}   ${go ? 'rewritten' : 'would rewrite'} ${go ? n('rewritten') : n('would-rewrite')}   skipped ${n('skipped')}`);
-  if (!go && n('would-rewrite') > 0) console.log('  re-run with --go to apply. The ledger and inbox/archive are not touched either way.');
+  if (!go && n('would-rewrite') > 0) console.log('  re-run with --go to apply. The ledger is not touched either way, and a cleared item stays cleared.');
   console.log('');
   return results;
 }
@@ -373,7 +390,7 @@ function status() {
 async function main() {
   const arg = process.argv[2] || '--once';
   if (arg === '--status') return status();
-  if (arg === '--backfill') return void await backfill(process.argv.includes('--go'));
+  if (arg === '--backfill') return void await backfill(process.argv.includes('--go'), { archive: process.argv.includes('--archive') });
   if (arg === '--once') return void await runOnce();
   if (arg === '--watch') {
     console.log(`intake: watching ${DROP} every ${POLL_MS}ms`);
@@ -383,7 +400,7 @@ async function main() {
     setInterval(tick, POLL_MS);
     return;
   }
-  console.error('Usage: intake.js [--once|--watch|--status|--backfill [--go]]'); process.exit(1);
+  console.error('Usage: intake.js [--once|--watch|--status|--backfill [--archive] [--go]]'); process.exit(1);
 }
 
 if (require.main === module) main();

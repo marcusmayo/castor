@@ -180,6 +180,36 @@ const run = () => silent(() => intake.runOnce());
     const r = await silent(() => intake.backfill(true));
     assert.strictEqual(r.find(x => x.file === staleDest).outcome, 'unchanged');
   });
+  await t('a CLEARED item is out of reach by default and reachable with --archive', async () => {
+    // queue-clear moves the file AND its sidecar into archive, so a cleared item
+    // is self-contained there. Reproduce that, then degrade its record.
+    const fl = flagsFor('rot.png');
+    const dest = fl.file;
+    for (const n of [dest, dest + '.flags.json']) fs.renameSync(path.join(intake.INBOX, n), path.join(intake.ARCHIVE, n));
+    const moved = JSON.parse(fs.readFileSync(path.join(intake.ARCHIVE, dest + '.flags.json'), 'utf8'));
+    delete moved.extraction.text_file; delete moved.extraction.text_chars;
+    moved.extraction.scan_state = 'vision-pending'; moved.extraction.chars = 1;
+    fs.writeFileSync(path.join(intake.ARCHIVE, dest + '.flags.json'), JSON.stringify(moved, null, 2) + '\n');
+
+    const plain = await silent(() => intake.backfill(false));
+    assert.ok(!plain.some(x => x.file.includes(dest)), 'an archived item must be invisible without --archive');
+
+    const withArchive = await silent(() => intake.backfill(true, { archive: true }));
+    const hit = withArchive.find(x => x.file === 'archive/' + dest);
+    assert.ok(hit, 'the cleared item was not reached with --archive');
+    assert.strictEqual(hit.outcome, 'rewritten');
+
+    const after = JSON.parse(fs.readFileSync(path.join(intake.ARCHIVE, dest + '.flags.json'), 'utf8'));
+    assert.strictEqual(after.extraction.scan_state, 'scanned');
+    assert.ok(after.extraction.text_file, 'no extraction was written beside the archived item');
+    assert.ok(fs.existsSync(path.join(intake.ARCHIVE, after.extraction.text_file)),
+      'the extraction must live beside its sidecar, not back in the review queue');
+    assert.ok(/Outline of Coverage/i.test(fs.readFileSync(path.join(intake.ARCHIVE, after.extraction.text_file), 'utf8')));
+  });
+  await t('re-reading a cleared item does not put it back in the queue', () => {
+    assert.ok(!admittedFiles().some(f => /rot\.png$/.test(f)),
+      'a cleared item reappeared in the review queue -- the operator cleared it and that decision stands');
+  });
 
   console.log('\n--- email recursion ---');
   await t('eml admitted, body + attachments in flags', async () => {
