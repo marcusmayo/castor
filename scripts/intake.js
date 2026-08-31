@@ -31,6 +31,8 @@
  *   node scripts/intake.js --once     single pass (cron)
  *   node scripts/intake.js --watch    poll loop
  *   node scripts/intake.js --status   counts and queues
+ *   node scripts/intake.js --backfill re-read admitted items with the current
+ *                                     extractor (plan; --go to apply)
  */
 
 const fs = require('fs');
@@ -142,6 +144,37 @@ function quarantine(file, reason, detail) {
   return { file: path.basename(file), outcome: 'quarantined', reason };
 }
 
+// The sidecar record for an extraction. Shared by admit and backfill so a
+// re-read cannot produce a differently-shaped record than an admission.
+function buildFlags(destName, ex, tw) {
+  return {
+    file: destName,
+    extraction: { type: path.extname(destName).toLowerCase(), extractor: ex.extractor, chars: ex.chars, scan_state: ex.scanState, ...(ex.legibility ? { legibility: ex.legibility } : {}), ...(ex.note ? { note: ex.note } : {}) },
+    has_vision_pending: anyVisionPending(ex),
+    has_unscanned: anyUnscanned(ex),
+    attachments: (ex.attachments || []).map(a => ({ name: a.name, scan_state: a.scanState, extractor: a.extractor, chars: a.chars, ...(a.legibility ? { legibility: a.legibility } : {}), ...(a.note ? { note: a.note } : {}) })),
+    tripwire: { flagged: tw.flagged, config_error: tw.configError, scanned: !tw.configError, hits: tw.hits },
+  };
+}
+
+// Write the vision-pending marker, or clear it when the item no longer needs
+// one. Called on admission AND on backfill, because a re-read can move an item
+// off the vision path as easily as onto it.
+function syncVisionMarker(destName, ex) {
+  const marker = path.join(INBOX, destName + '.vision-pending.json');
+  if (!anyVisionPending(ex)) { try { fs.unlinkSync(marker); } catch (_) {} return false; }
+  const targets = [];
+  if (ex.scanState === 'vision-pending') targets.push('<self>');
+  for (const a of ex.attachments || []) if (a.scanState === 'vision-pending') targets.push(a.name);
+  writeSidecar(destName + '.vision-pending.json', {
+    file: destName,
+    targets,
+    reason: ex.note || 'image OCR recovered little text; contents not scannable as text',
+    instructions: 'Trigger attested vision interpretation from the webchat. Raw-image egress to the vision model requires explicit operator confirmation.',
+  });
+  return true;
+}
+
 function admit(file, ex, tw) {
   const base = safeName(path.basename(file));
   const destName = `${stamp()}_${base}`;
@@ -149,33 +182,16 @@ function admit(file, ex, tw) {
   fs.chmodSync(path.join(INBOX, destName), 0o600);
   fs.renameSync(file, path.join(ARCHIVE, destName));
 
-  const visionPending = anyVisionPending(ex);
-  const flags = {
-    file: destName,
-    admitted_at: new Date().toISOString(),
-    extraction: { type: path.extname(base).toLowerCase(), extractor: ex.extractor, chars: ex.chars, scan_state: ex.scanState, ...(ex.legibility ? { legibility: ex.legibility } : {}), ...(ex.note ? { note: ex.note } : {}) },
-    has_vision_pending: visionPending,
-    has_unscanned: anyUnscanned(ex),
-    attachments: (ex.attachments || []).map(a => ({ name: a.name, scan_state: a.scanState, extractor: a.extractor, chars: a.chars, ...(a.legibility ? { legibility: a.legibility } : {}), ...(a.note ? { note: a.note } : {}) })),
-    tripwire: { flagged: tw.flagged, config_error: tw.configError, scanned: !tw.configError, hits: tw.hits },
-  };
+  const flags = buildFlags(destName, ex, tw);
+  flags.admitted_at = new Date().toISOString();
+  const visionPending = flags.has_vision_pending;
   // Written BEFORE the sidecar is finalised so the sidecar can point at it, and so a file with
   // no recoverable text simply carries no pointer rather than a pointer to nothing.
   const txt = writeExtractedText(destName, ex);
   if (txt) { flags.extraction.text_file = txt.rel; flags.extraction.text_chars = txt.chars; if (txt.truncated) flags.extraction.text_truncated = true; }
   writeSidecar(destName + '.flags.json', flags);
 
-  if (visionPending) {
-    const targets = [];
-    if (ex.scanState === 'vision-pending') targets.push('<self>');
-    for (const a of ex.attachments || []) if (a.scanState === 'vision-pending') targets.push(a.name);
-    writeSidecar(destName + '.vision-pending.json', {
-      file: destName,
-      targets,
-      reason: ex.note || 'image OCR recovered little text; contents not scannable as text',
-      instructions: 'Trigger attested vision interpretation from the webchat. Raw-image egress to the vision model requires explicit operator confirmation.',
-    });
-  }
+  syncVisionMarker(destName, ex);
 
   record({
     action: 'INTAKE', status: 'ADMITTED', file: destName,
@@ -217,6 +233,91 @@ async function processOne(file, ledger) {
   const res = admit(file, ex, tw);
   ledger.processed[digest] = { file: res.dest, admitted_at: new Date().toISOString() };
   return res;
+}
+
+// ---------------------------------------------------------------------------
+// Backfill. An item carries whatever the pipeline understood on the day it
+// arrived, and the ledger dedupes on CONTENT, so re-dropping the same bytes can
+// never produce a second reading — it bounces to archive as a duplicate. That
+// makes every improvement to the extractor invisible to everything already in
+// the store, and it is why the ledger got edited by hand once to force a
+// re-read. This is the supported way to do that instead.
+//
+// It re-runs the CURRENT extractor over admitted items and rewrites the sidecar
+// and the extraction in place. It does not re-admit, does not touch the ledger,
+// and does not touch inbox/archive — the file's arrival is a fact and stays
+// recorded as one. admitted_at is preserved; backfilled_at and what the earlier
+// reading said are added, so the record shows it was re-read rather than
+// pretending this was always the answer.
+//
+// The new text has never been through the tripwire, so it is scanned again. A
+// re-read that recovers real text from what used to be gibberish is exactly the
+// case where a term could appear that nothing has ever looked at.
+//
+//   node scripts/intake.js --backfill        plan only, writes nothing
+//   node scripts/intake.js --backfill --go   apply
+async function backfill(go) {
+  ensureDirs();
+  let sidecars = [];
+  try { sidecars = fs.readdirSync(INBOX).filter(f => f.endsWith('.flags.json')).sort(); } catch { sidecars = []; }
+
+  const results = [];
+  for (const f of sidecars) {
+    let fl = null;
+    try { fl = JSON.parse(fs.readFileSync(path.join(INBOX, f), 'utf8')); } catch { fl = null; }
+    if (!fl || !fl.file || !fl.extraction) { results.push({ file: f, outcome: 'skipped', reason: 'sidecar unreadable or carries no extraction' }); continue; }
+
+    const dest = fl.file;
+    const target = path.join(INBOX, dest);
+    if (!fs.existsSync(target)) { results.push({ file: dest, outcome: 'skipped', reason: 'the admitted file is no longer in inbox' }); continue; }
+
+    let ex;
+    try { ex = await extract(target); }
+    catch (e) { results.push({ file: dest, outcome: 'skipped', reason: 'extractor threw: ' + (e.message || '').slice(0, 80) }); continue; }
+
+    const before = { scan_state: fl.extraction.scan_state, chars: fl.extraction.chars,
+                     extractor: fl.extraction.extractor, has_text: !!fl.extraction.text_file };
+    const after = { scan_state: ex.scanState, chars: ex.chars, extractor: ex.extractor,
+                    has_text: !!(ex.text && ex.text.trim()) };
+    const changed = before.scan_state !== after.scan_state || before.chars !== after.chars
+                 || before.extractor !== after.extractor || before.has_text !== after.has_text;
+
+    if (!changed) { results.push({ file: dest, outcome: 'unchanged', before, after }); continue; }
+    if (!go) { results.push({ file: dest, outcome: 'would-rewrite', before, after }); continue; }
+
+    const tw = classifyTripwire(ex);
+    const flags = buildFlags(dest, ex, tw);
+    flags.admitted_at = fl.admitted_at;                       // when it ARRIVED, not when it was re-read
+    flags.backfilled_at = new Date().toISOString();
+    flags.backfill = { was: before };
+
+    const txt = writeExtractedText(dest, ex);
+    if (txt) { flags.extraction.text_file = txt.rel; flags.extraction.text_chars = txt.chars; if (txt.truncated) flags.extraction.text_truncated = true; }
+    else if (fl.extraction.text_file) { try { fs.unlinkSync(path.join(INBOX, fl.extraction.text_file)); } catch (_) {} }
+    writeSidecar(dest + '.flags.json', flags);
+    syncVisionMarker(dest, ex);
+
+    record({ action: 'INTAKE', status: 'BACKFILLED', file: dest,
+             from_scan: before.scan_state, to_scan: after.scan_state,
+             extractor: ex.extractor, chars_before: before.chars, chars_after: after.chars,
+             flagged: tw.flagged, config_error: tw.configError });
+    results.push({ file: dest, outcome: 'rewritten', before, after, flagged: tw.flagged });
+  }
+
+  const n = o => results.filter(r => r.outcome === o).length;
+  console.log(`\n=== intake backfill${go ? '' : ' (PLAN — nothing written)'}: ${results.length} admitted item(s) ===`);
+  for (const r of results) {
+    if (r.outcome === 'unchanged') continue;
+    if (r.outcome === 'skipped') { console.log(`  skipped        ${r.file} — ${r.reason}`); continue; }
+    const move = `${r.before.scan_state} -> ${r.after.scan_state}`;
+    const chars = `chars ${r.before.chars} -> ${r.after.chars}`;
+    const text = r.before.has_text === r.after.has_text ? '' : (r.after.has_text ? '  +extraction' : '  -extraction');
+    console.log(`  ${r.outcome.padEnd(14)} ${r.file}  [${move}] ${chars}${text}${r.flagged ? '  FLAGGED' : ''}`);
+  }
+  console.log(`  unchanged ${n('unchanged')}   ${go ? 'rewritten' : 'would rewrite'} ${go ? n('rewritten') : n('would-rewrite')}   skipped ${n('skipped')}`);
+  if (!go && n('would-rewrite') > 0) console.log('  re-run with --go to apply. The ledger and inbox/archive are not touched either way.');
+  console.log('');
+  return results;
 }
 
 async function runOnce() {
@@ -272,6 +373,7 @@ function status() {
 async function main() {
   const arg = process.argv[2] || '--once';
   if (arg === '--status') return status();
+  if (arg === '--backfill') return void await backfill(process.argv.includes('--go'));
   if (arg === '--once') return void await runOnce();
   if (arg === '--watch') {
     console.log(`intake: watching ${DROP} every ${POLL_MS}ms`);
@@ -281,9 +383,9 @@ async function main() {
     setInterval(tick, POLL_MS);
     return;
   }
-  console.error('Usage: intake.js [--once|--watch|--status]'); process.exit(1);
+  console.error('Usage: intake.js [--once|--watch|--status|--backfill [--go]]'); process.exit(1);
 }
 
 if (require.main === module) main();
 
-module.exports = { runOnce, status, DROP, INBOX, ARCHIVE, QUARANTINE, LEDGER, SUPPORTED };
+module.exports = { runOnce, status, backfill, DROP, INBOX, ARCHIVE, QUARANTINE, LEDGER, SUPPORTED };

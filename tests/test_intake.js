@@ -22,7 +22,11 @@ const inboxFiles = () => fs.readdirSync(intake.INBOX).filter(f => fs.statSync(pa
 const admittedFiles = () => inboxFiles().filter(f => !f.startsWith('.') && !f.endsWith('.flags.json') && !f.endsWith('.vision-pending.json'));
 const quar = () => fs.readdirSync(intake.QUARANTINE).filter(f => !f.endsWith('.reason.txt'));
 function flagsFor(destSuffix) { const f = inboxFiles().find(x => x.endsWith(destSuffix + '.flags.json')); return f ? JSON.parse(fs.readFileSync(path.join(intake.INBOX, f), 'utf8')) : null; }
-function silent(fn) { const o = console.log; console.log = () => {}; const r = fn(); if (r && r.then) return r.finally(() => { console.log = o; }); console.log = o; return r; }
+function silent(fn) { const o = console.log; console.log = () => {}; let r;
+  // A synchronous throw used to leave console.log muted for the rest of the run,
+  // so a later failure printed nothing and the suite ended with no summary line.
+  try { r = fn(); } catch (e) { console.log = o; throw e; }
+  if (r && r.then) return r.finally(() => { console.log = o; }); console.log = o; return r; }
 const run = () => silent(() => intake.runOnce());
 
 (async () => {
@@ -115,6 +119,67 @@ const run = () => silent(() => intake.runOnce());
     }
   });
 
+
+  console.log('\n--- backfill: an already-admitted item can be re-read ---');
+  let staleDest = null, staleAdmittedAt = null, ledgerBefore = null, archiveBefore = null;
+  await t('setup: degrade a record to what the pre-orientation pipeline left behind', () => {
+    // Deliberately NOT a fresh drop: identical bytes bounce off the ledger as a
+    // duplicate, which is the whole reason this pass has to exist.
+    const fl = flagsFor('phone.jpg');
+    assert.ok(fl, 'no admitted item to degrade');
+    staleDest = fl.file; staleAdmittedAt = fl.admitted_at;
+    try { fs.unlinkSync(path.join(intake.INBOX, fl.extraction.text_file)); } catch (_) {}
+    delete fl.extraction.text_file; delete fl.extraction.text_chars;
+    fl.extraction.scan_state = 'vision-pending';
+    fl.extraction.chars = 704;
+    fl.extraction.legibility = { tokens: 125, words: 73, ratio: 0.584 };
+    fl.extraction.note = 'OCR recovered 468 characters but only 73 of 125 tokens read as words';
+    fl.has_vision_pending = true;
+    fs.writeFileSync(path.join(intake.INBOX, staleDest + '.flags.json'), JSON.stringify(fl, null, 2) + '\n');
+    fs.writeFileSync(path.join(intake.INBOX, staleDest + '.vision-pending.json'),
+      JSON.stringify({ file: staleDest, targets: ['<self>'], reason: 'stale' }, null, 2) + '\n');
+    ledgerBefore = fs.readFileSync(intake.LEDGER, 'utf8');
+    archiveBefore = fs.readdirSync(intake.ARCHIVE).sort().join('|');
+  });
+  await t('the plan writes nothing', async () => {
+    const r = await silent(() => intake.backfill(false));
+    const mine = r.find(x => x.file === staleDest);
+    assert.ok(mine, 'the stale item was not seen by the plan');
+    assert.strictEqual(mine.outcome, 'would-rewrite');
+    const fl = JSON.parse(fs.readFileSync(path.join(intake.INBOX, staleDest + '.flags.json'), 'utf8'));
+    assert.strictEqual(fl.extraction.scan_state, 'vision-pending', 'the plan rewrote the sidecar');
+    assert.ok(!fl.extraction.text_file, 'the plan wrote an extraction');
+    assert.ok(!fl.backfilled_at, 'the plan stamped the record');
+  });
+  await t('--go re-reads it, and the record says it was re-read', async () => {
+    await silent(() => intake.backfill(true));
+    const fl = JSON.parse(fs.readFileSync(path.join(intake.INBOX, staleDest + '.flags.json'), 'utf8'));
+    assert.strictEqual(fl.extraction.scan_state, 'scanned');
+    assert.strictEqual(fl.extraction.legibility.transform, 'exif-orientation-6');
+    assert.strictEqual(fl.admitted_at, staleAdmittedAt, 'arrival time must survive a re-read');
+    assert.ok(fl.backfilled_at, 'a re-read must be stamped, not passed off as the original reading');
+    assert.strictEqual(fl.backfill.was.scan_state, 'vision-pending', 'the record must keep what it said before');
+    assert.ok(fl.extraction.text_file, 'no extraction was produced');
+    assert.ok(/Outline of Coverage/i.test(fs.readFileSync(path.join(intake.INBOX, fl.extraction.text_file), 'utf8')));
+  });
+  await t('the item leaves the vision queue when it no longer needs it', () => {
+    assert.ok(!fs.existsSync(path.join(intake.INBOX, staleDest + '.vision-pending.json')),
+      'the marker survived a re-read that made the image readable');
+  });
+  await t('the ledger and the archive are not touched', () => {
+    assert.strictEqual(fs.readFileSync(intake.LEDGER, 'utf8'), ledgerBefore,
+      'backfill must never edit the ledger -- that is the thing it exists to avoid');
+    assert.strictEqual(fs.readdirSync(intake.ARCHIVE).sort().join('|'), archiveBefore, 'archive was modified');
+  });
+  await t('the re-read text is scanned by the tripwire, not carried over', () => {
+    const fl = JSON.parse(fs.readFileSync(path.join(intake.INBOX, staleDest + '.flags.json'), 'utf8'));
+    assert.strictEqual(fl.tripwire.scanned, true,
+      'text recovered for the first time has never been through the tripwire and must be');
+  });
+  await t('a second backfill is a no-op', async () => {
+    const r = await silent(() => intake.backfill(true));
+    assert.strictEqual(r.find(x => x.file === staleDest).outcome, 'unchanged');
+  });
 
   console.log('\n--- email recursion ---');
   await t('eml admitted, body + attachments in flags', async () => {
