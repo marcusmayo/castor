@@ -326,6 +326,23 @@ async function backfill(go, opts) {
              flagged: tw.flagged, config_error: tw.configError });
     results.push({ file: label + dest, outcome: 'rewritten', before, after, flagged: tw.flagged });
   }
+
+  // An extraction whose item is not beside it is unowned. Clearing an item used
+  // to leave its text behind, so a stale copy of an item's content could sit in
+  // the queue's own .text while the corrected one lived in the archive -- two
+  // texts, one question. The clear ceremony now moves it; this collects the ones
+  // already stranded. The item's presence decides, not the sidecar, so a text
+  // whose record is gone is removed too.
+  let texts = [];
+  try { texts = fs.readdirSync(path.join(HOME, TEXT_DIR)).sort(); } catch { texts = []; }
+  for (const t of texts) {
+    if (!t.endsWith('.txt')) continue;
+    const owner = t.slice(0, -'.txt'.length);
+    if (fs.existsSync(path.join(HOME, owner))) continue;
+    if (go) { try { fs.unlinkSync(path.join(HOME, TEXT_DIR, t)); } catch (_) {} }
+    results.push({ file: label + TEXT_DIR + '/' + t, outcome: go ? 'pruned' : 'would-prune',
+                   reason: 'the item it extracts is not in this directory' });
+  }
   }
 
   const n = o => results.filter(r => r.outcome === o).length;
@@ -333,13 +350,14 @@ async function backfill(go, opts) {
   for (const r of results) {
     if (r.outcome === 'unchanged') continue;
     if (r.outcome === 'skipped') { console.log(`  skipped        ${r.file} — ${r.reason}`); continue; }
+    if (r.outcome === 'pruned' || r.outcome === 'would-prune') { console.log(`  ${r.outcome.padEnd(14)} ${r.file} — ${r.reason}`); continue; }
     const move = `${r.before.scan_state} -> ${r.after.scan_state}`;
     const chars = `chars ${r.before.chars} -> ${r.after.chars}`;
     const text = r.before.has_text === r.after.has_text ? '' : (r.after.has_text ? '  +extraction' : '  -extraction');
     console.log(`  ${r.outcome.padEnd(14)} ${r.file}  [${move}] ${chars}${text}${r.flagged ? '  FLAGGED' : ''}`);
   }
-  console.log(`  unchanged ${n('unchanged')}   ${go ? 'rewritten' : 'would rewrite'} ${go ? n('rewritten') : n('would-rewrite')}   skipped ${n('skipped')}`);
-  if (!go && n('would-rewrite') > 0) console.log('  re-run with --go to apply. The ledger is not touched either way, and a cleared item stays cleared.');
+  console.log(`  unchanged ${n('unchanged')}   ${go ? 'rewritten' : 'would rewrite'} ${go ? n('rewritten') : n('would-rewrite')}   ${go ? 'pruned' : 'would prune'} ${go ? n('pruned') : n('would-prune')}   skipped ${n('skipped')}`);
+  if (!go && (n('would-rewrite') + n('would-prune')) > 0) console.log('  re-run with --go to apply. The ledger is not touched either way, and a cleared item stays cleared.');
   console.log('');
   return results;
 }

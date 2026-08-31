@@ -208,7 +208,12 @@ const run = () => silent(() => intake.runOnce());
     fs.writeFileSync(path.join(intake.ARCHIVE, dest + '.flags.json'), JSON.stringify(moved, null, 2) + '\n');
 
     const plain = await silent(() => intake.backfill(false));
-    assert.ok(!plain.some(x => x.file.includes(dest)), 'an archived item must be invisible without --archive');
+    assert.ok(!plain.some(x => x.file === dest && /rewrite/.test(x.outcome)),
+      'an archived item must not be re-read without --archive');
+    // Clearing moved the item but left its extraction behind, which is the thing
+    // that put a stale copy of an item's text in the queue's own .text.
+    assert.ok(plain.some(x => x.outcome === 'would-prune' && x.file.includes(dest)),
+      'the stranded extraction was not seen');
 
     const withArchive = await silent(() => intake.backfill(true, { archive: true }));
     const hit = withArchive.find(x => x.file === 'archive/' + dest);
@@ -252,6 +257,20 @@ const run = () => silent(() => intake.runOnce());
     assert.strictEqual(fixed.file, renamed, 'the record must name itself correctly after the repair');
     assert.strictEqual(fixed.backfill.named_itself, orig, 'the repair must be on the record, not silent');
     assert.ok(r.some(x => x.file === 'archive/' + renamed));
+  });
+
+  await t('an extraction whose item is gone is pruned, one whose item is present is not', async () => {
+    const keep = flagsFor('s.png');                       // still in the review queue
+    const strandedName = '2026-01-01_gone.png.txt';
+    fs.writeFileSync(path.join(intake.INBOX, '.text', strandedName), 'text for an item that is not here');
+    const plan = await silent(() => intake.backfill(false));
+    assert.ok(plan.some(x => x.outcome === 'would-prune' && x.file.endsWith(strandedName)));
+    assert.ok(fs.existsSync(path.join(intake.INBOX, '.text', strandedName)), 'the plan deleted something');
+
+    await silent(() => intake.backfill(true));
+    assert.ok(!fs.existsSync(path.join(intake.INBOX, '.text', strandedName)), 'the stranded extraction survived --go');
+    assert.ok(fs.existsSync(path.join(intake.INBOX, keep.extraction.text_file)),
+      'an extraction whose item is still present must never be pruned');
   });
 
   console.log('\n--- email recursion ---');
