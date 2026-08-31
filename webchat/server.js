@@ -67,6 +67,17 @@ auth.mountAuth(app, { webchatDir: __dirname, agentName: AGENT_NAME });
 
 // --- container liveness probe (unauthenticated, 200 only) ------------------
 app.get('/health/liveliness', (req, res) => res.status(200).send('ok'));
+// --- build provenance: which commit is this container actually running? -----
+// Aegis reaches agents only over HTTP, so an image label it cannot see is not provenance for the
+// plane. Authenticated -- the revision is not for the open internet. A container built before the
+// stamp existed answers commit: null rather than guessing.
+app.get('/build', requireAuth, (req, res) => res.json({
+  ok: true,
+  commit: auth.readBuildCommit(require('path').dirname(__dirname)),
+  profile: 'castor',
+  name: AGENT_NAME,
+}));
+
 
 // --- current model routing, for the UI to display the active model ---------
 
