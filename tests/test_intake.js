@@ -182,6 +182,22 @@ const run = () => silent(() => intake.runOnce());
     assert.strictEqual(fs.readFileSync(abs, 'utf8'), real, 'the re-read did not restore the correct order');
   });
 
+  await t('the label column comes from where lines START, not from the widest line', () => {
+    // Deriving the boundary from the widest first cluster on any line put it past
+    // the notes column: one full-width chat line and every line counted as a
+    // label, so nothing was ever a continuation and almost nothing rebound. The
+    // fixture's header line spans the width for exactly this reason.
+    const fl = flagsFor('grid.png');
+    assert.strictEqual(fl.extraction.legibility.rows_bound, true,
+      'no rows were bound -- the label column boundary swallowed the notes column');
+    const lines = fs.readFileSync(path.join(intake.INBOX, fl.extraction.text_file), 'utf8').split('\n');
+    const startOf = re => { const l = lines.find(x => re.test(x)); return l === undefined ? -1 : l.search(/\S/); };
+    const label = startOf(/^\s*NESSY/), note = startOf(/Customer\s+attestation/);
+    assert.ok(label >= 0 && note >= 0, 'fixture rows not found');
+    assert.ok(note > label + 8,
+      'a label and a continuation start at nearly the same column -- the split found no channel');
+  });
+
   console.log('\n--- backfill: an already-admitted item can be re-read ---');
   let staleDest = null, staleAdmittedAt = null, ledgerBefore = null, archiveBefore = null;
   await t('setup: degrade a record to what the pre-orientation pipeline left behind', () => {

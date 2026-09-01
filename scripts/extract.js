@@ -208,12 +208,12 @@ function ocrGrid(file) {
     // the channels between columns, and a photograph of a screen full of table
     // reported one column. Measured share of lines carrying an internal gap:
     // prose 0.13, a photographed table 0.33, a rendered table 0.42.
-    let columns = 1, gapped = 0, col1End = 0;
+    let columns = 1, gapped = 0;
     for (const b of bands) {
       const ws = b.words.slice().sort((p, q) => p.left - q.left);
       let clusters = 1, edge = ws[0].left + ws[0].text.length * charW;
       for (const w of ws.slice(1)) {
-        if (w.left - edge > charW * 6) { if (clusters === 1) col1End = Math.max(col1End, edge); clusters++; }
+        if (w.left - edge > charW * 6) clusters++;
         edge = Math.max(edge, w.left + w.text.length * charW);
       }
       if (clusters > columns) columns = clusters;
@@ -221,6 +221,20 @@ function ocrGrid(file) {
     }
     const columnar = gapped >= COLUMNAR_MIN_LINES && gapped / bands.length >= COLUMNAR_MIN_SHARE;
     if (!columnar) return { text, columns };
+
+    // Where the LABEL column ends, taken from where the lines actually start.
+    // Deriving it from the widest first cluster on any line was wrong: one
+    // full-width line pushed the boundary past the notes column, every line then
+    // counted as a label, and nothing was ever a continuation. Instead, split the
+    // distribution of line-start positions at its widest gap -- on a photographed
+    // table the starts fall in two groups with a large channel between them.
+    const starts = bands.map(b => b.words[0].left).sort((a, b) => a - b);
+    let col1End = starts[starts.length - 1], widest = 0;
+    for (let i = 1; i < starts.length; i++) {
+      const gap = starts[i] - starts[i - 1];
+      if (gap > widest) { widest = gap; col1End = starts[i - 1]; }
+    }
+    if (widest <= charW * 6) return { text, columns };   // no channel: nothing to bind against
 
     // Bind each continuation line to the row it belongs to, by VERTICAL DISTANCE
     // to the nearest label rather than to whichever label happens to precede it.
