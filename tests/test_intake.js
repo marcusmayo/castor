@@ -159,6 +159,29 @@ const run = () => silent(() => intake.runOnce());
       'the recorded ratio is the gridded one, not the reading the floor judged');
   });
 
+  await t('a change that only reorders the text is still a change', async () => {
+    // Binding a cell to its own row leaves the character count identical. A
+    // detector that compares only length reports "unchanged" and the improved
+    // reading never reaches the store -- which is exactly what happened.
+    const fl = flagsFor('grid.png');
+    const abs = path.join(intake.INBOX, fl.extraction.text_file);
+    const real = fs.readFileSync(abs, 'utf8');
+    const lines = real.split('\n');
+    assert.ok(lines.length > 3, 'fixture extraction is too short to reorder');
+    const shuffled = [lines[0], lines[2], lines[1], ...lines.slice(3)].join('\n');
+    assert.strictEqual(shuffled.length, real.length, 'the reorder must not change the length');
+    fs.writeFileSync(abs, shuffled);
+
+    const plan = await silent(() => intake.backfill(false));
+    const mine = plan.find(x => x.file === fl.file);
+    assert.ok(mine, 'the item was not seen');
+    assert.strictEqual(mine.outcome, 'would-rewrite',
+      'a reordered extraction was reported unchanged -- length is not content');
+
+    await silent(() => intake.backfill(true));
+    assert.strictEqual(fs.readFileSync(abs, 'utf8'), real, 'the re-read did not restore the correct order');
+  });
+
   console.log('\n--- backfill: an already-admitted item can be re-read ---');
   let staleDest = null, staleAdmittedAt = null, ledgerBefore = null, archiveBefore = null;
   await t('setup: degrade a record to what the pre-orientation pipeline left behind', () => {

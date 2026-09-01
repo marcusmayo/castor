@@ -119,14 +119,20 @@ function writeSidecar(destBase, obj, base) {
 // admitted item for every file. -> the sidecar-relative path, or null
 const TEXT_DIR = '.text';
 const TEXT_MAX = 2 * 1024 * 1024;
-function writeExtractedText(destName, ex, base) {
-  const home = base || INBOX;
+// The body an extraction WOULD be written as. Shared with the writer so a
+// comparison can never drift from what is actually stored.
+function extractedBody(ex) {
   const parts = [];
   if (ex.text) parts.push(String(ex.text));
   for (const a of ex.attachments || []) {
     if (a.text) parts.push('\n\n----- attachment: ' + a.name + ' -----\n' + String(a.text));
   }
-  let body = parts.join('');
+  return parts.join('');
+}
+
+function writeExtractedText(destName, ex, base) {
+  const home = base || INBOX;
+  let body = extractedBody(ex);
   if (!body.trim()) return null;
   let truncated = false;
   if (body.length > TEXT_MAX) { body = body.slice(0, TEXT_MAX); truncated = true; }
@@ -300,8 +306,22 @@ async function backfill(go, opts) {
                      extractor: fl.extraction.extractor, has_text: !!fl.extraction.text_file };
     const after = { scan_state: ex.scanState, chars: ex.chars, extractor: ex.extractor,
                     has_text: !!(ex.text && ex.text.trim()) };
+    // Compare the TEXT, not just its length. An extractor change that only
+    // reorders lines -- binding a table cell to the row it belongs to -- leaves
+    // the character count identical, so a length comparison reports "unchanged"
+    // and the improvement never reaches the store.
+    let sameText = false;
+    if (fl.extraction.text_file) {
+      try {
+        const stored = fs.readFileSync(path.join(HOME, fl.extraction.text_file), 'utf8');
+        const body = extractedBody(ex);
+        sameText = stored === body || stored === body + '\n\n[truncated at ' + TEXT_MAX + ' characters]\n'
+                || stored.slice(0, TEXT_MAX) === body.slice(0, TEXT_MAX);
+      } catch (_) { sameText = false; }
+    }
     const changed = before.scan_state !== after.scan_state || before.chars !== after.chars
-                 || before.extractor !== after.extractor || before.has_text !== after.has_text;
+                 || before.extractor !== after.extractor || before.has_text !== after.has_text
+                 || (after.has_text && !sameText);
 
     if (!changed) { results.push({ file: label + dest, outcome: 'unchanged', before, after }); continue; }
     if (!go) { results.push({ file: label + dest, outcome: 'would-rewrite', before, after }); continue; }
