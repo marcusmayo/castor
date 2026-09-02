@@ -375,8 +375,23 @@ function extractXlsx(buf) {
   catch { return result('', 'unscanned', 'sheetjs', 'xlsx parser not installed'); }
   try {
     const wb = XLSX.read(buf, { type: 'buffer', cellDates: true });
-    const text = wb.SheetNames.map(n => XLSX.utils.sheet_to_csv(wb.Sheets[n])).join('\n');
-    return result(text, 'scanned', 'sheetjs');
+    // Name each sheet in the text. The sheet name was previously used to index
+    // the workbook and then discarded, so a multi-tab file arrived as
+    // concatenated CSV with no boundary -- a second header row appearing
+    // mid-file, and a reader left to infer that a tab had changed. Which tab a
+    // row came from is exactly what a reconciliation needs, and inferring it is
+    // the same failure as a table whose rows have been dissolved.
+    //
+    // The marker matches the one used for mail attachments, so anything already
+    // reading these files sees one convention rather than two. An EMPTY sheet
+    // still gets its heading: that a tab exists and holds nothing is a fact
+    // about the workbook, not an absence of one.
+    const text = wb.SheetNames
+      .map(n => '----- sheet: ' + n + ' -----\n' + XLSX.utils.sheet_to_csv(wb.Sheets[n]))
+      .join('\n');
+    const r = result(text, 'scanned', 'sheetjs');
+    r.sheets = wb.SheetNames.slice();
+    return r;
   } catch (e) {
     return result('', 'unscanned', 'sheetjs', 'xlsx parse failed: ' + (e.message || '').slice(0, 120));
   }

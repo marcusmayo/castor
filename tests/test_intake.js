@@ -60,6 +60,27 @@ const run = () => silent(() => intake.runOnce());
     assert.ok(/attested vision/i.test(m.instructions));
   });
 
+  await t('every sheet in a workbook is named in the extraction, empty ones included', async () => {
+    putFile('tabs.xlsx', path.join(FIX, 'tabs.xlsx'));
+    const r = await run();
+    assert.strictEqual(r.length, 1, JSON.stringify(r.map(x => [x.file, x.outcome])));
+    const fl = flagsFor('tabs.xlsx');
+    assert.strictEqual(fl.extraction.extractor, 'sheetjs');
+    assert.deepStrictEqual(fl.extraction.sheets, ['Backlog', 'Status', 'Notes'],
+      'the sidecar must record which tabs the workbook held');
+    const text = fs.readFileSync(path.join(intake.INBOX, fl.extraction.text_file), 'utf8');
+    for (const s of ['Backlog', 'Status', 'Notes']) {
+      assert.ok(text.includes('----- sheet: ' + s + ' -----'), s + ' is not named in the extraction');
+    }
+    // Which tab a row came from is the thing a reconciliation needs: without a
+    // boundary a second header row just appears mid-file and has to be inferred.
+    const lines = text.split('\n');
+    const at = re => lines.findIndex(l => re.test(l));
+    assert.ok(at(/sheet: Backlog/) < at(/Billing API/), 'a row precedes its own sheet heading');
+    assert.ok(at(/Billing API/) < at(/sheet: Status/), 'the Backlog rows spill past the Status heading');
+    assert.ok(at(/sheet: Status/) < at(/In Progress/), 'a Status row precedes its own sheet heading');
+  });
+
   console.log('\n--- OCR orientation and legibility: character count is not content ---');
   const textOf = suffix => {
     const fl = flagsFor(suffix);

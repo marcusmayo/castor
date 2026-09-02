@@ -157,7 +157,7 @@ function quarantine(file, reason, detail) {
 function buildFlags(destName, ex, tw) {
   return {
     file: destName,
-    extraction: { type: path.extname(destName).toLowerCase(), extractor: ex.extractor, chars: ex.chars, scan_state: ex.scanState, ...(ex.legibility ? { legibility: ex.legibility } : {}), ...(ex.note ? { note: ex.note } : {}) },
+    extraction: { type: path.extname(destName).toLowerCase(), extractor: ex.extractor, chars: ex.chars, scan_state: ex.scanState, ...(ex.legibility ? { legibility: ex.legibility } : {}), ...(ex.sheets ? { sheets: ex.sheets } : {}), ...(ex.note ? { note: ex.note } : {}) },
     has_vision_pending: anyVisionPending(ex),
     has_unscanned: anyUnscanned(ex),
     attachments: (ex.attachments || []).map(a => ({ name: a.name, scan_state: a.scanState, extractor: a.extractor, chars: a.chars, ...(a.legibility ? { legibility: a.legibility } : {}), ...(a.note ? { note: a.note } : {}) })),
